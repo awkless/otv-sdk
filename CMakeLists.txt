@@ -18,6 +18,8 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake")
 include(Cpm)
 
+option(ENABLE_TESTS "Build test framework" OFF)
+
 find_package(OpenCV 4.10 REQUIRED)
 
 CPMAddPackage(
@@ -44,3 +46,11 @@ CPMAddPackage(
     VERSION 1.15.0
     OPTIONS "SPDLOG_FMT_EXTERNAL ON"
 )
+
+if(ENABLE_TESTS)
+    CPMAddPackage(
+        Catch2
+        GITHUB_REPOSITORY catchorg/Catch2
+        GIT_TAG v3.14.0
+    )
+endif()
