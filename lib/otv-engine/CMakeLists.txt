@@ -104,3 +104,25 @@ install(
         "${CMAKE_CURRENT_BINARY_DIR}/OtvSdkConfigVersion.cmake"
     DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/cmake/OtvSdk
 )
+
+if(ENABLE_TESTS)
+    add_library(CompileOptions INTERFACE)
+    add_library(OtvSdk::CompileOptions ALIAS CompileOptions)
+
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(
+            CompileOptions
+            INTERFACE
+                $<$<COMPILE_LANGUAGE:CXX>:-Wall -Wextra -pedantic>
+        )
+    endif()
+
+    add_executable(test_config "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_config.cpp")
+    target_link_libraries(
+        test_config
+        PRIVATE
+            OtvSdk::Engine OtvSdk::CompileOptions Catch2::Catch2WithMain
+    )
+    catch_discover_tests(test_config)
+
+endif()
