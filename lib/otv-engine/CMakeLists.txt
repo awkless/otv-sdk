@@ -117,6 +117,18 @@ if(ENABLE_TESTS)
         )
     endif()
 
+    configure_file(
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/good_config.toml.in"
+        "${CMAKE_CURRENT_BINARY_DIR}/tests/fixtures/good_config.toml"
+        @ONLY
+    )
+
+    configure_file(
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/bad_config.toml.in"
+        "${CMAKE_CURRENT_BINARY_DIR}/tests/fixtures/bad_config.toml"
+        @ONLY
+    )
+
     add_executable(test_config "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_config.cpp")
     target_link_libraries(
         test_config
