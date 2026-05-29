@@ -2,14 +2,20 @@
 // SPDX-FileCopyrightText: 2026 Huidae Cho <hcho@nmsu.edu>
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-#include <fmt/base.h>
-
 #include "otv_sdk/engine.hpp"
 
 namespace otv_sdk {
-// TODO: Implement stuff here.
-void foo()
+Config Config::from_file(std::filesystem::path& path)
 {
-	fmt::print("Hello world!\n");
+    (void)path;
+
+    return {};
+}
+
+Config Config::from_str(std::string_view string)
+{
+    (void)string;
+
+    return {};
 }
 } // namespace otv
