@@ -12,6 +12,12 @@
 #include "otv_sdk/engine.hpp"
 
 namespace otv_sdk {
+namespace {
+constexpr float FULL_FRAME_RESOLUTION = 1.0f;
+constexpr float HALF_FRAME_RESOLUTION = 0.5f;
+constexpr float QUARTER_FRAME_RESOLUTION = 0.25f;
+} // anonymous namespace
+
 template <typename T, typename E>
 [[nodiscard]] T
 value_required(const std::optional<T>& option, const E& error)
@@ -56,11 +62,11 @@ parse_calibration_settings(const toml::table& toml)
         toml["calibration"]["resolution"].value<std::string>(),
         ConfigError("missing string value from calibration.resolution", toml.source()));
     if (resopt == "full_frame") {
-        calib.resolution = 1.0f;
+        calib.resolution = FULL_FRAME_RESOLUTION;
     } else if (resopt == "half_frame") {
-        calib.resolution = 0.5f;
+        calib.resolution = HALF_FRAME_RESOLUTION;
     } else if (resopt == "quarter_frame") {
-        calib.resolution = 0.25f;
+        calib.resolution = QUARTER_FRAME_RESOLUTION;
     } else {
         throw ConfigError(
             fmt::format("calibration.resolution set to unknown option '{}'", resopt).c_str(),
@@ -144,8 +150,17 @@ Config Config::from_file(std::filesystem::path& path)
 
 Config Config::from_str(std::string_view string)
 {
-    (void)string;
+    auto config = Config {};
 
-    return {};
+    try {
+        toml::table toml = toml::parse(string);
+        config.calibration = parse_calibration_settings(toml);
+        config.lucas_kanade = parse_lucas_kanade_settings(toml);
+        config.video = parse_video_settings(toml);
+    } catch (const toml::parse_error& error) {
+        throw ConfigError(error.description().data(), std::move(error.source()));
+    }
+
+    return config;
 }
 } // namespace otv
