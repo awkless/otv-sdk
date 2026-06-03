@@ -1,0 +1,28 @@
+# SPDX-FileCopyrightText: 2026 Jason Pena <jpalex@nmsu.edu>
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+[calibration]
+pixel_to_real = 0.004965
+partial_min_angle = -135.00
+partial_max_angle = -45.00
+final_min_angle = -110.00
+final_max_angle = -80.00
+final_min_distance = 216.00
+max_features = 15000
+resolution = "full_frame"
+region_step = 100.00
+feature_detector = "FAST"
+
+[lukas_kanade]
+max_level = 4
+radius = 4
+max_count = 20
+epsilon = 0.03
+flags = 0
+min_eig_threshold = 0.001
+
+[video_info]
+fps = 25
+width = 1430
+height = 1080
+jump = 1
