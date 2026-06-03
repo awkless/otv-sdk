@@ -55,6 +55,10 @@ if(ENABLE_TESTS)
         GITHUB_REPOSITORY catchorg/Catch2
         GIT_TAG v3.14.0
     )
+
+    list(APPEND CMAKE_MODULE_PATH ${Catch2_SOURCE_DIR}/extras)
+    include(CTest)
+    include(Catch)
 endif()
 
 add_subdirectory(lib)
