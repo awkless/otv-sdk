@@ -8,7 +8,10 @@
 #include <cstdint>
 #include <filesystem>
 #include <string_view>
+#include <vector>
 
+#include <opencv2/core.hpp>
+#include <opencv2/features2d.hpp>
 #include <toml++/toml.hpp>
 
 #include "otv_sdk/engine/export.hpp"
@@ -119,6 +122,191 @@ struct [[nodiscard]] Config {
 
     /// @brief Parsed video settings.
     VideoSettings video;
+};
+
+struct KeyPoints
+{
+    /// @brief Detected points from feature detector.
+    std::vector<cv::KeyPoint> detected;
+
+    /// @brief Current points being actively tracked.
+    std::vector<cv::KeyPoint> current;
+
+    /// @brief Points predicted by Lucas-Kanade for the next frame.
+    std::vector<cv::KeyPoint> predicted;
+
+    /// @brief Starting positions at the time each point was first detected.
+    std::vector<cv::KeyPoint> start;
+
+    /// @brief Frame index at which each tracked point was first detected.
+    std::vector<int> timestamp;
+};
+
+/// @brief Aggregate velocity statistics across all tracked trajectories.
+struct [[nodiscard]] VelocityStats
+{
+    float avg = 0.0f;
+    float max = 0.0f;
+    float min = 0.0f;
+    float std_dev = 0.0f;
+    int count = 0;
+};
+
+/// @brief Per-frame record of validated trajectory segments for visualization.
+///
+/// Members current[i] and predicted[i] are the start and end of a single tracked segment, colored
+/// by velocities[i]. Populated only when enable_snapshots() is called.
+struct FrameSnapshot
+{
+    std::vector<cv::KeyPoint> current;
+    std::vector<cv::KeyPoint> predicted;
+    std::vector<float> velocities;
+};
+
+/// @brief Automatic feature detection handler.
+///
+/// Selects and wraps the cv::Feature2D algorithm chosen by settings.
+class FeatureDetector
+{
+public:
+    explicit FeatureDetector(const CalibrationSettings& calib, cv::Size frame_size);
+
+    /// @brief Detect keypoints in image, writing results to keypoints.detected.
+    void detect(cv::InputArray image, KeyPoints& keypoints);
+
+private:
+    cv::Ptr<cv::Feature2D> m_detector;
+};
+
+/// @brief Lucas-Kanade optical flow tracker.
+class LucasKanade
+{
+public:
+    explicit LucasKanade(const LucasKanadeSettings& lk);
+
+    /// @brief Track keypoints between two frames.
+    ///
+    /// Converts current_kps to Point2f internally and writes results into m_lk_next.
+    void track_points(cv::Mat previous_frame,
+                      cv::Mat current_frame,
+                      const std::vector<cv::KeyPoint>& current_kps);
+
+    /// @brief Status vector from the last calcOpticalFlowPyrLK call.
+    ///
+    /// Each entry is 1 if the corresponding feature was found, 0 otherwise.
+    const std::vector<unsigned char>& status() const;
+
+    /// @brief Output points from the last calcOpticalFlowPyrLK call.
+    const std::vector<cv::Point2f>& next_points() const;
+
+private:
+    LucasKanadeSettings m_lk_settings;
+    std::vector<unsigned char> m_status;
+    std::vector<float> m_err;
+    std::vector<cv::Point2f> m_lk_prev;
+    std::vector<cv::Point2f> m_lk_next;
+    cv::Size m_min_size;
+    cv::TermCriteria m_termcrit;
+};
+
+/// @brief Per-column sub-region velocity accumulator.
+///
+/// Divides the frame width into equal-width columns and accumulates per-column
+/// velocity samples and trajectory counts.
+class SubRegion
+{
+public:
+    explicit SubRegion(const CalibrationSettings& calib, int width);
+
+    /// @brief Add new velocity to target sub-region.
+    void add_velocity(size_t idx, float velocity);
+
+    /// @brief Increment trajectory of target sub-region by one.
+    void increment_trajectory(size_t idx);
+
+    /// @brief Per-column average velocity.
+    std::vector<float> avg() const;
+
+    /// @brief Per-column population standard deviation.
+    std::vector<float> std_dev() const;
+
+    /// @brief Get trajectories of sub-regions.
+    const std::vector<int>& trajectories() const;
+
+    /// @brief Pixel width of each sub-region column.
+    int step() const;
+
+    /// @brief Size of sub-region.
+    size_t size() const;
+
+private:
+    int m_step;
+    std::vector<std::vector<float>> m_velocities;
+    std::vector<int> m_trajectories;
+};
+
+/// @brief Frame-by-frame OTV processing pipeline.
+///
+/// Accepts frames one at a time via process_frame(). Each call detects new
+/// feature points, tracks existing ones with Lucas-Kanade, applies per-frame
+/// and final trajectory filters, and accumulates velocities into sub-regions.
+/// Call stats() and sub_regions() after processing all frames for results.
+class OtvEngine
+{
+public:
+    explicit OtvEngine(const Config& config);
+
+    /// @brief Register an optional binary mask image (0 = exclude, 255 = include).
+    ///
+    /// The mask is normalized to {0,1} and resized to the configured video
+    /// dimensions before being applied to each subsequent frame.
+    void set_mask(const cv::Mat& mask);
+
+    /// @brief Process the next frame in sequence.
+    void process_frame(const cv::Mat& frame);
+
+    /// @brief Enable per-frame snapshot recording for visualization output.
+    ///
+    /// Must be called before any process_frame() calls. When enabled,
+    /// snapshots() returns per-frame data populated with validated trajectory
+    /// segments — suitable for driving write_video() in a caller.
+    void enable_snapshots();
+
+    /// @brief Overall velocity statistics across all processed frames.
+    VelocityStats stats() const;
+
+    /// @brief Get current sub-region.
+    const SubRegion& sub_regions() const;
+
+    /// @brief Per-frame snapshots (empty unless enable_snapshots() was called).
+    const std::vector<FrameSnapshot>& snapshots() const;
+
+private:
+    void apply_mask(cv::Mat& frame) const;
+    void admit_new_points();
+    void determine_optical_flow(const cv::Mat& current);
+    void track_trajectory(size_t idx, float scaled_min_dist, float scaled_pixel_to_real);
+
+    struct HistoryEntry
+    {
+        int frame_idx;
+        cv::KeyPoint current;
+        cv::KeyPoint predicted;
+    };
+
+    Config m_config;
+    float m_effective_fps;
+    FeatureDetector m_detector;
+    LucasKanade m_lk;
+    SubRegion m_sub_regions;
+    KeyPoints m_keypoints;
+    cv::Mat m_mask;
+    cv::Mat m_previous_frame;
+    std::vector<std::vector<float>> m_frame_velocities;
+    int m_frame_idx;
+    bool m_record_snapshots;
+    std::vector<FrameSnapshot> m_snapshots;
+    std::vector<std::vector<HistoryEntry>> m_point_histories;
 };
 
 class ConfigError : public toml::parse_error {
