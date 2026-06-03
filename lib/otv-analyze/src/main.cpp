@@ -101,22 +101,45 @@ parse_cli(int argc, char** argv)
     cxxopts::Options cli("otv-analyze", "perform OTV analysis on video files");
 
     cli.add_options()
-        ("m,mask", "optional binary mask image (0 = exclude, 255 = include", cxxopts::value<std::filesystem::path>())
-        ("o,output", "output directory for analysis results (default: output/)", cxxopts::value<std::filesystem::path>()->default_value("output"))
+        ("m,mask", "optional binary mask image (0 = exclude, 255 = include)", cxxopts::value<std::filesystem::path>())
+        ("o,output", "output directory for analysis results", cxxopts::value<std::filesystem::path>()->default_value("output"))
         ("v,visualize", "write velocity visualization of tracked particles to output directory")
+        ("h,help", "print help")
         ("video", "path to video file to analyze", cxxopts::value<std::filesystem::path>())
         ("config", "path to TOML configuration file", cxxopts::value<std::filesystem::path>());
 
     cli.parse_positional({"video", "config"});
-    auto result = cli.parse(argc, argv);
+    cli.positional_help("<video> <config>");
 
-    options.video_path = result["video"].as<std::filesystem::path>();
-    options.config_path = result["config"].as<std::filesystem::path>();
-    options.mask_path = result["mask"].as<std::filesystem::path>();
-    options.output_dir = result["output"].as<std::filesystem::path>();
-    options.visualize = result["visualize"].as<bool>();
+    try {
+        auto result = cli.parse(argc, argv);
 
-    return options;
+        if (result.count("help")) {
+            fmt::println("{}", cli.help({""}));
+            std::exit(0);
+        }
+
+        if (!result.count("video") || !result.count("config")) {
+            fmt::println(stderr, "Error: <video> and <config> are required");
+            fmt::println(stderr, "{}", cli.help({""}));
+            std::exit(1);
+        }
+
+        options.video_path = result["video"].as<std::filesystem::path>();
+        options.config_path = result["config"].as<std::filesystem::path>();
+
+        if (result.count("mask")) {
+            options.mask_path = result["mask"].as<std::filesystem::path>();
+        }
+
+        options.output_dir = result["output"].as<std::filesystem::path>();
+        options.visualize = result["visualize"].as<bool>();
+
+        return options;
+    } catch (const std::exception& e) {
+        fmt::println(stderr, "Error parsing arguments: {}", e.what());
+        std::exit(1);
+    }
 }
 
 static cv::Mat
