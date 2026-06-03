@@ -23,3 +23,8 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
          $<$<COMPILE_LANGUAGE:CXX>:-Wall -pedantic>
    )
 endif()
+
+install(
+    TARGETS otv-analyze
+    DESTINATION bin
+)
