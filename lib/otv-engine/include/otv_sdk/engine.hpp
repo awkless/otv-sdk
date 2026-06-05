@@ -194,9 +194,11 @@ public:
     /// @brief Status vector from the last calcOpticalFlowPyrLK call.
     ///
     /// Each entry is 1 if the corresponding feature was found, 0 otherwise.
+    [[nodiscard]]
     const std::vector<unsigned char>& status() const;
 
     /// @brief Output points from the last calcOpticalFlowPyrLK call.
+    [[nodiscard]]
     const std::vector<cv::Point2f>& next_points() const;
 
 private:
@@ -225,18 +227,23 @@ public:
     void increment_trajectory(size_t idx);
 
     /// @brief Per-column average velocity.
+    [[nodiscard]]
     std::vector<float> avg() const;
 
     /// @brief Per-column population standard deviation.
+    [[nodiscard]]
     std::vector<float> std_dev() const;
 
     /// @brief Get trajectories of sub-regions.
+    [[nodiscard]]
     const std::vector<int>& trajectories() const;
 
     /// @brief Pixel width of each sub-region column.
+    [[nodiscard]]
     int step() const;
 
     /// @brief Size of sub-region.
+    [[nodiscard]]
     size_t size() const;
 
 private:
@@ -273,12 +280,15 @@ public:
     void enable_snapshots();
 
     /// @brief Overall velocity statistics across all processed frames.
+    [[nodiscard]]
     VelocityStats stats() const;
 
     /// @brief Get current sub-region.
+    [[nodiscard]]
     const SubRegion& sub_regions() const;
 
     /// @brief Per-frame snapshots (empty unless enable_snapshots() was called).
+    [[nodiscard]]
     const std::vector<FrameSnapshot>& snapshots() const;
 
 private:
@@ -289,9 +299,9 @@ private:
 
     struct HistoryEntry
     {
-        int frame_idx;
-        cv::KeyPoint current;
-        cv::KeyPoint predicted;
+        int frame_idx = 0;
+        cv::KeyPoint current = {};
+        cv::KeyPoint predicted = {};
     };
 
     Config m_config;

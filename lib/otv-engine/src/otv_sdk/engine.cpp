@@ -23,13 +23,14 @@ namespace {
 constexpr float FULL_FRAME_RESOLUTION = 1.0f;
 constexpr float HALF_FRAME_RESOLUTION = 0.5f;
 constexpr float QUARTER_FRAME_RESOLUTION = 0.25f;
-constexpr float k_pi = 3.14159265358979323846f;
+constexpr float PI = 3.14159265358979323846f;
 
 float
 get_angle(const cv::KeyPoint& kp1, const cv::KeyPoint& kp2)
 {
     // INVARIANT: Angle in degrees of the displacement vector from kp1 to kp2.
-    return std::atan2(kp2.pt.y - kp1.pt.y, kp2.pt.x - kp1.pt.x) * 180.0f / k_pi;
+    constexpr float k_rad_to_degree = 180.0f / PI;
+    return std::atan2(kp2.pt.y - kp1.pt.y, kp2.pt.x - kp1.pt.x) * k_rad_to_degree;
 }
 
 float
@@ -103,7 +104,7 @@ compute_stats(const std::vector<std::vector<float>>& velocities)
         return result;
     }
 
-    result.avg /= result.count;
+    result.avg /= static_cast<float>(result.count);
 
     float variance = 0.0f;
     for (const auto& frame : velocities) {
@@ -114,7 +115,7 @@ compute_stats(const std::vector<std::vector<float>>& velocities)
             }
         }
     }
-    result.std_dev = std::sqrt(variance / result.count);
+    result.std_dev = std::sqrt(variance / static_cast<float>(result.count));
 
     return result;
 }
@@ -337,7 +338,7 @@ LucasKanade::next_points() const
 SubRegion::SubRegion(const CalibrationSettings& calib, int width)
     : m_step(static_cast<int>(calib.region_step * calib.resolution))
 {
-    int n_regions = static_cast<int>(std::ceil(static_cast<float>(width) / m_step));
+    int n_regions = static_cast<int>(std::ceil(static_cast<float>(width) / static_cast<float>(m_step)));
     m_velocities.resize(n_regions);
     m_trajectories.resize(n_regions, 0);
 }
@@ -385,7 +386,7 @@ SubRegion::std_dev() const
             float diff = v - averages[i];
             sum_sq += diff * diff;
         }
-        devs[i] = std::sqrt(sum_sq / m_velocities[i].size());
+        devs[i] = std::sqrt(sum_sq / static_cast<float>(m_velocities[i].size()));
     }
 
     return devs;
@@ -411,7 +412,7 @@ SubRegion::size() const
 
 OtvEngine::OtvEngine(const Config& config)
     : m_config(config)
-    , m_effective_fps(static_cast<float>(config.video.fps) / config.video.jump)
+    , m_effective_fps(static_cast<float>(config.video.fps) / static_cast<float>(config.video.jump))
     , m_detector(config.calibration, cv::Size(config.video.width, config.video.height))
     , m_lk(config.lucas_kanade)
     , m_sub_regions(config.calibration, config.video.width)
@@ -435,7 +436,8 @@ OtvEngine::snapshots() const
 void
 OtvEngine::set_mask(const cv::Mat& mask)
 {
-    m_mask = mask / 255;
+    constexpr int bit_value = 255;
+    m_mask = mask / bit_value;
     cv::Size target(m_config.video.width, m_config.video.height);
 
     if (m_mask.size() != target)
@@ -494,7 +496,7 @@ OtvEngine::track_trajectory(size_t idx, float scaled_min_dist, float scaled_pixe
                      scaled_min_dist,
                      m_config.calibration.final_min_angle,
                      m_config.calibration.final_max_angle)) {
-        float dt = static_cast<float>(m_frame_idx - m_keypoints.timestamp[idx]);
+        auto dt = static_cast<float>(m_frame_idx - m_keypoints.timestamp[idx]);
         float vel = get_velocity(m_keypoints.start[idx],
                                  m_keypoints.current[idx],
                                  scaled_pixel_to_real,
