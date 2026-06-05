@@ -1,0 +1,41 @@
+# SPDX-FileCopyrightText: 2026 Jason Pena <jasonpena@awkless.com>
+# SPDX-FileCopyrightText: 2026 Huidae Cho <hcho@nmsu.edu>
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+name: Quality Check
+
+on: [push, pull_request]
+
+jobs:
+  build:
+    name: ubuntu-latest-gcc
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup CPP
+        uses: aminya/setup-cpp@v1
+        with:
+          compiler: gcc
+          vcvarsall: false
+          cmake: true
+          ninja: true
+          vcpkg: false
+          ccache: true
+          cppcheck: true
+          clangtidy: true
+          conan: false
+
+      - name: Manage Dependencies
+        run: sudo apt install libopencv-dev
+
+      - name: Configure CMake
+        run: cmake --preset debug
+
+      - name: Build
+        run: cmake --build --preset debug
+
+      - name: Run Tests
+        run: ctest --test-dir build/debug
