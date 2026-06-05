@@ -17,7 +17,8 @@
       "inherits": "base",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
-        "ENABLE_TESTS": "ON"
+        "ENABLE_TESTS": "ON",
+        "ENABLE_CLANG_TIDY": "ON"
       }
     },
     {

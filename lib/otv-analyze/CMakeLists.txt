@@ -24,6 +24,14 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
    )
 endif()
 
+if(ENABLE_CLANG_TIDY)
+    set_target_properties(
+        otv-analyze
+        PROPERTIES CXX_CLANG_TIDY
+            "${CLANG_TIDY_CMD};-config-file=${CMAKE_SOURCE_DIR}/.clang-tidy"
+    )
+endif()
+
 install(
     TARGETS otv-analyze
     DESTINATION bin

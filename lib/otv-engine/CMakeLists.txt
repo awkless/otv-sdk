@@ -136,5 +136,12 @@ if(ENABLE_TESTS)
             OtvSdk::Engine OtvSdk::CompileOptions Catch2::Catch2WithMain
     )
     catch_discover_tests(test_config)
+endif()
 
+if(ENABLE_CLANG_TIDY)
+    set_target_properties(
+        Engine
+        PROPERTIES CXX_CLANG_TIDY
+            "${CLANG_TIDY_CMD};-config-file=${CMAKE_SOURCE_DIR}/.clang-tidy"
+    )
 endif()
