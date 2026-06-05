@@ -29,7 +29,7 @@ jobs:
           conan: false
 
       - name: Manage Dependencies
-        run: apt install libopencv-dev
+        run: sudo apt install libopencv-dev
 
       - name: Configure CMake
         run: cmake --preset debug
