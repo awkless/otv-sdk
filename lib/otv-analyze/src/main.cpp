@@ -21,10 +21,8 @@
 
 #include <otv_sdk/engine.hpp>
 
-static void
-write_stats(const std::filesystem::path& output_dir,
-            const otv_sdk::VelocityStats& stats,
-            float elapsed_seconds)
+static void write_stats(const std::filesystem::path& output_dir,
+    const otv_sdk::VelocityStats& stats, float elapsed_seconds)
 {
     std::filesystem::create_directories(output_dir);
     std::filesystem::path file_path = output_dir / "stats_synthesis.csv";
@@ -43,10 +41,8 @@ write_stats(const std::filesystem::path& output_dir,
       << "time," << elapsed_seconds;
 }
 
-static void
-write_sub_regions(const std::filesystem::path& output_dir,
-                  const otv_sdk::SubRegion& sub_regions,
-                  int width)
+static void write_sub_regions(
+    const std::filesystem::path& output_dir, const otv_sdk::SubRegion& sub_regions, int width)
 {
     std::filesystem::create_directories(output_dir);
     std::filesystem::path file_path = output_dir / "sub_regions.csv";
@@ -81,12 +77,11 @@ write_sub_regions(const std::filesystem::path& output_dir,
     f << '\n';
 
     f << "N. trajectories, ";
-    for (float t : sub_regions.trajectories())
+    for (int t : sub_regions.trajectories())
         f << t << ", ";
 }
 
-struct CliOptions
-{
+struct CliOptions {
     std::filesystem::path video_path;
     std::filesystem::path config_path;
     std::filesystem::path mask_path;
@@ -94,34 +89,34 @@ struct CliOptions
     bool visualize = false;
 };
 
-static CliOptions
-parse_cli(int argc, char** argv)
+static CliOptions parse_cli(int argc, char** argv)
 {
-    auto options = CliOptions{};
+    auto options = CliOptions {};
     cxxopts::Options cli("otv-analyze", "perform OTV analysis on video files");
 
-    cli.add_options()
-        ("m,mask", "optional binary mask image (0 = exclude, 255 = include)", cxxopts::value<std::filesystem::path>())
-        ("o,output", "output directory for analysis results", cxxopts::value<std::filesystem::path>()->default_value("output"))
-        ("v,visualize", "write velocity visualization of tracked particles to output directory")
-        ("h,help", "print help")
-        ("video", "path to video file to analyze", cxxopts::value<std::filesystem::path>())
-        ("config", "path to TOML configuration file", cxxopts::value<std::filesystem::path>());
+    cli.add_options()("m,mask", "optional binary mask image (0 = exclude, 255 = include)",
+        cxxopts::value<std::filesystem::path>())("o,output",
+        "output directory for analysis results",
+        cxxopts::value<std::filesystem::path>()->default_value("output"))(
+        "v,visualize", "write velocity visualization of tracked particles to output directory")(
+        "h,help", "print help")(
+        "video", "path to video file to analyze", cxxopts::value<std::filesystem::path>())(
+        "config", "path to TOML configuration file", cxxopts::value<std::filesystem::path>());
 
-    cli.parse_positional({"video", "config"});
+    cli.parse_positional({ "video", "config" });
     cli.positional_help("<video> <config>");
 
     try {
         auto result = cli.parse(argc, argv);
 
         if (result.count("help")) {
-            fmt::println("{}", cli.help({""}));
+            fmt::println("{}", cli.help({ "" }));
             std::exit(0);
         }
 
         if (!result.count("video") || !result.count("config")) {
             fmt::println(stderr, "Error: <video> and <config> are required");
-            fmt::println(stderr, "{}", cli.help({""}));
+            fmt::println(stderr, "{}", cli.help({ "" }));
             std::exit(1);
         }
 
@@ -142,66 +137,47 @@ parse_cli(int argc, char** argv)
     }
 }
 
-static cv::Mat
-fill_background(const cv::Mat& frame, const cv::Mat& colored, const cv::Mat& normalized)
+static cv::Mat fill_background(
+    const cv::Mat& frame, const cv::Mat& colored, const cv::Mat& normalized)
 {
-    cv::Mat out(frame.size(), CV_8UC3, cv::Scalar(0, 0, 0));
-    std::vector<cv::Mat> ch_out(3), ch_frame(3), ch_traj(3);
-    cv::split(out, ch_out);
-    cv::split(frame, ch_frame);
-    cv::split(colored, ch_traj);
+    cv::Mat out(frame.size(), CV_8UC3, cv::Scalar::all(0));
 
     for (int row = 0; row < frame.rows; ++row) {
         for (int col = 0; col < frame.cols; ++col) {
-            if (normalized.ptr<uchar>(row)[col] == 0) {
-                ch_out[0].ptr<uchar>(row)[col] = ch_frame[0].ptr<uchar>(row)[col];
-                ch_out[1].ptr<uchar>(row)[col] = ch_frame[1].ptr<uchar>(row)[col];
-                ch_out[2].ptr<uchar>(row)[col] = ch_frame[2].ptr<uchar>(row)[col];
-            } else {
-                ch_out[0].ptr<uchar>(row)[col] = ch_traj[0].ptr<uchar>(row)[col];
-                ch_out[1].ptr<uchar>(row)[col] = ch_traj[1].ptr<uchar>(row)[col];
-                ch_out[2].ptr<uchar>(row)[col] = ch_traj[2].ptr<uchar>(row)[col];
-            }
+            bool is_bg = normalized.at<uchar>(row, col) == 0;
+            out.at<cv::Vec3b>(row, col)
+                = is_bg ? frame.at<cv::Vec3b>(row, col) : colored.at<cv::Vec3b>(row, col);
         }
     }
 
-    cv::merge(ch_out, out);
     return out;
 }
 
-static void
-put_labels(const std::vector<std::string>& labels, cv::Mat& frame)
+static void put_labels(const std::vector<std::string>& labels, cv::Mat& frame)
 {
+    static constexpr double k_label_font_scale = 0.5;
+    static constexpr int k_label_start_y = 20;
+    static constexpr int k_label_line_height = 20;
+    static constexpr int white = 255;
+
     int fontface = cv::FONT_HERSHEY_SIMPLEX;
-    double scale = 0.5;
+    double scale = k_label_font_scale;
     int thickness = 1;
 
     for (int i = 0; i < static_cast<int>(labels.size()); ++i) {
-        cv::Point pt(0, 20 + i * 20);
+        cv::Point pt(0, k_label_start_y + i * k_label_line_height);
         int baseline = 0;
         cv::Size text = cv::getTextSize(labels[i], fontface, scale, thickness, &baseline);
-        cv::rectangle(frame,
-                      pt + cv::Point(0, baseline),
-                      pt + cv::Point(text.width, -text.height),
-                      cv::Scalar(0, 0, 0),
-                      cv::FILLED);
-        cv::putText(frame,
-                    labels[i],
-                    pt,
-                    fontface,
-                    scale,
-                    cv::Scalar(255, 255, 255),
-                    thickness,
-                    cv::LINE_8);
+        cv::rectangle(frame, pt + cv::Point(0, baseline), pt + cv::Point(text.width, -text.height),
+            cv::Scalar::all(0), cv::FILLED);
+        cv::putText(
+            frame, labels[i], pt, fontface, scale, cv::Scalar::all(white), thickness, cv::LINE_8);
     }
 }
 
-static void
-write_video(const std::filesystem::path& video_path,
-            const std::filesystem::path& output_dir,
-            const otv_sdk::Config& config,
-            const std::vector<otv_sdk::FrameSnapshot>& snapshots,
-            const otv_sdk::VelocityStats& stats)
+static void write_video(const std::filesystem::path& video_path,
+    const std::filesystem::path& output_dir, const otv_sdk::Config& config,
+    const std::vector<otv_sdk::FrameSnapshot>& snapshots, const otv_sdk::VelocityStats& stats)
 {
     cv::VideoCapture cap(video_path.string());
     if (!cap.isOpened()) {
@@ -262,12 +238,8 @@ write_video(const std::filesystem::path& video_path,
         // image.
         const auto& snap = snapshots[snap_idx];
         for (size_t j = 0; j < snap.current.size(); ++j) {
-            cv::line(vel_img,
-                     snap.current[j].pt,
-                     snap.predicted[j].pt,
-                     snap.velocities[j],
-                     1,
-                     cv::LINE_AA);
+            cv::line(vel_img, snap.current[j].pt, snap.predicted[j].pt, snap.velocities[j], 1,
+                cv::LINE_AA);
 
             float v = snap.velocities[j];
             ++running_count;
@@ -278,14 +250,18 @@ write_video(const std::filesystem::path& video_path,
         }
 
         cv::Mat normalized, colored;
-        cv::normalize(vel_img, normalized, 0, 255, cv::NORM_MINMAX);
+        static constexpr double k_norm_min = 0.0;
+        static constexpr double k_norm_max = 255.0;
+        cv::normalize(vel_img, normalized, k_norm_min, k_norm_max, cv::NORM_MINMAX);
         normalized.convertTo(normalized, CV_8U);
         cv::applyColorMap(normalized, colored, cv::COLORMAP_JET);
 
-        float avg_disp = (running_count > 0) ? running_sum / running_count : 0.0f;
+        float avg_disp
+            = (running_count > 0) ? running_sum / static_cast<float>(running_count) : 0.0f;
         float variance = (running_count > 0)
-                             ? std::max(0.0f, running_sum_sq / running_count - avg_disp * avg_disp)
-                             : 0.0f;
+            ? std::max(
+                  0.0f, running_sum_sq / static_cast<float>(running_count) - avg_disp * avg_disp)
+            : 0.0f;
         float std_disp = std::sqrt(variance);
 
         std::vector<std::string> labels = {
@@ -313,8 +289,7 @@ write_video(const std::filesystem::path& video_path,
     fmt::println("Visualization written to '{}'", out_path);
 }
 
-static void
-run_otv_engine(CliOptions options)
+static void run_otv_engine(CliOptions options)
 {
     otv_sdk::Config config = otv_sdk::Config::from_file(options.config_path);
 
@@ -366,25 +341,24 @@ run_otv_engine(CliOptions options)
     }
     fmt::println("");
 
+    constexpr float microseconds_to_seconds = 1'000'000.0f;
     auto t_end = std::chrono::steady_clock::now();
-    float elapsed =
-        static_cast<float>(
-            std::chrono::duration_cast<std::chrono::microseconds>(t_end - t_start).count()) /
-        1'000'000.0f;
+    float elapsed
+        = static_cast<float>(
+              std::chrono::duration_cast<std::chrono::microseconds>(t_end - t_start).count())
+        / microseconds_to_seconds;
 
     auto stats = engine.stats();
     write_stats(options.output_dir, stats, elapsed);
     write_sub_regions(options.output_dir, engine.sub_regions(), config.video.width);
 
     if (options.visualize)
-        write_video(
-            options.video_path, options.output_dir, config, engine.snapshots(), stats);
+        write_video(options.video_path, options.output_dir, config, engine.snapshots(), stats);
 
     fmt::println("Done. Results written to '{}'", options.output_dir.string());
 }
 
-int
-main(int argc, char** argv)
+int main(int argc, char** argv)
 {
     auto options = parse_cli(argc, argv);
     try {
@@ -395,7 +369,7 @@ main(int argc, char** argv)
     } catch (const std::filesystem::filesystem_error& error) {
         fmt::println(stderr, "Filesystem error: {}", error.what());
         return 1;
-    } catch(const std::exception& error) {
+    } catch (const std::exception& error) {
         fmt::println(stderr, "Failure: {}", error.what());
         return 1;
     }
