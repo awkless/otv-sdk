@@ -4,3 +4,4 @@
 
 add_subdirectory(otv-engine)
 add_subdirectory(otv-analyze)
+add_subdirectory(otv-stream)

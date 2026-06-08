@@ -20,6 +20,7 @@ set(CMAKE_DEBUG_POSTFIX d)
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake")
 include(Cpm)
 
+option(TARGET_RPI4B "Build for Raspberry Pi 4B" OFF)
 option(ENABLE_TESTS "Build test framework" OFF)
 
 find_package(OpenCV 4.6 REQUIRED)
