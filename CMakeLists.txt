@@ -51,6 +51,20 @@ CPMAddPackage(
     OPTIONS "SPDLOG_FMT_EXTERNAL ON"
 )
 
+CPMAddPackage(
+    NAME websocketpp
+    GITHUB_REPOSITORY zaphoyd/websocketpp
+    GIT_TAG 0.8.2
+    DOWNLOAD_ONLY TRUE
+)
+
+CPMAddPackage(
+    NAME asio
+    GITHUB_REPOSITORY chriskohlhoff/asio
+    GIT_TAG asio-1-28-0
+    DOWNLOAD_ONLY TRUE
+)
+
 if(ENABLE_TESTS)
     CPMAddPackage(
         Catch2

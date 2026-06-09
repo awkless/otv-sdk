@@ -17,11 +17,20 @@ if(TARGET_RPI4B)
             cxxopts::cxxopts OtvSdk::Engine fmt::fmt
     )
 
+    target_include_directories(
+        otv-server
+        PRIVATE
+            ${websocketpp_SOURCE_DIR}
+            ${asio_SOURCE_DIR}/asio/include
+    )
+
+    target_compile_definitions(otv-server PRIVATE ASIO_STANDALONE)
+
     if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         target_compile_options(
           otv-server
           PRIVATE
-             $<$<COMPILE_LANGUAGE:CXX>:-Wall -pedantic>
+              $<$<COMPILE_LANGUAGE:CXX>:-Wall -pedantic -Wno-template-id-cdtor>
         )
     endif()
 
@@ -41,11 +50,20 @@ else()
             cxxopts::cxxopts
     )
 
+    target_include_directories(
+        otv-client
+        PRIVATE
+            ${websocketpp_SOURCE_DIR}
+            ${asio_SOURCE_DIR}/asio/include
+    )
+
+    target_compile_definitions(otv-client PRIVATE ASIO_STANDALONE)
+
     if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         target_compile_options(
           otv-client
           PRIVATE
-             $<$<COMPILE_LANGUAGE:CXX>:-Wall -pedantic>
+              $<$<COMPILE_LANGUAGE:CXX>:-Wall -pedantic -Wno-template-id-cdtor>
         )
     endif()
 
