@@ -9,12 +9,16 @@ if(TARGET_RPI4B)
         otv-server
         PRIVATE
             "${CMAKE_CURRENT_SOURCE_DIR}/src/otv_server/main.cpp"
+            "${CMAKE_CURRENT_SOURCE_DIR}/src/otv_server/server.cpp"
     )
+
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(LIBCAMERA REQUIRED libcamera)
 
     target_link_libraries(
         otv-server
         PRIVATE
-            cxxopts::cxxopts OtvSdk::Engine fmt::fmt
+        cxxopts::cxxopts spdlog::spdlog OtvSdk::Engine fmt::fmt ${LIBCAMERA_LIBRARIES}
     )
 
     target_include_directories(
@@ -22,6 +26,7 @@ if(TARGET_RPI4B)
         PRIVATE
             ${websocketpp_SOURCE_DIR}
             ${asio_SOURCE_DIR}/asio/include
+            ${LIBCAMERA_INCLUDE_DIRS}
     )
 
     target_compile_definitions(otv-server PRIVATE ASIO_STANDALONE)
@@ -47,7 +52,7 @@ else()
     target_link_libraries(
         otv-client
         PRIVATE
-            cxxopts::cxxopts
+            cxxopts::cxxopts spdlog::spdlog
     )
 
     target_include_directories(
