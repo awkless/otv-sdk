@@ -21,6 +21,7 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake")
 include(Cpm)
 
 option(ENABLE_TESTS "Build test framework" OFF)
+option(ENABLE_CLANG_TIDY "Enable static analysis via clang-tidy" OFF)
 
 find_package(OpenCV 4.6 REQUIRED)
 
@@ -59,6 +60,13 @@ if(ENABLE_TESTS)
     list(APPEND CMAKE_MODULE_PATH ${Catch2_SOURCE_DIR}/extras)
     include(CTest)
     include(Catch)
+endif()
+
+if(ENABLE_CLANG_TIDY)
+    find_program(CLANG_TIDY_CMD "clang-tidy")
+    if(NOT CLANG_TIDY_CMD)
+        message(FATAL_ERROR "clang-tidy requested but not found")
+    endif()
 endif()
 
 add_subdirectory(lib)
