@@ -20,6 +20,7 @@ set(CMAKE_DEBUG_POSTFIX d)
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake")
 include(Cpm)
 
+option(TARGET_RPI4B "Build for Raspberry Pi 4B" OFF)
 option(ENABLE_TESTS "Build test framework" OFF)
 option(ENABLE_CLANG_TIDY "Enable static analysis via clang-tidy" OFF)
 

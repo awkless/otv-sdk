@@ -11,7 +11,7 @@
       }
     },
     {
-      "name": "debug",
+      "name": "host-debug",
       "displayName": "Debug",
       "description": "Debug build with test cases",
       "inherits": "base",
@@ -22,23 +22,52 @@
       }
     },
     {
-      "name": "release",
+      "name": "host-release",
       "displayName": "Release",
       "description": "Release build",
       "inherits": "base",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release"
       }
+    },
+    {
+      "name": "rpi4b-debug",
+      "displayName": "Rpi 4B Debug",
+      "description": "Debug build with test cases targeting Rpi 4B",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "TARGET_RPI4B": "ON",
+        "ENABLE_TESTS": "ON"
+      }
+    },
+    {
+      "name": "rpi4b-release",
+      "displayName": "Rpi 4B Release",
+      "description": "Release build targeting Rpi 4B",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "TARGET_RPI4B": "ON"
+      }
     }
   ],
   "buildPresets": [
     {
-      "name": "debug",
-      "configurePreset": "debug"
+      "name": "host-debug",
+      "configurePreset": "host-debug"
     },
     {
-      "name": "release",
-      "configurePreset": "release"
+      "name": "host-release",
+      "configurePreset": "host-release"
+    },
+    {
+      "name": "rpi4b-debug",
+      "configurePreset": "rpi4b-debug"
+    },
+    {
+      "name": "rpi4b-release",
+      "configurePreset": "rpi4b-release"
     }
   ]
 }
