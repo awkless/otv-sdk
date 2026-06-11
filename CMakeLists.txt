@@ -22,7 +22,7 @@ include(Cpm)
 
 option(ENABLE_TESTS "Build test framework" OFF)
 
-find_package(OpenCV 4.10 REQUIRED)
+find_package(OpenCV 4.6 REQUIRED)
 
 CPMAddPackage(
     NAME cxxopts
