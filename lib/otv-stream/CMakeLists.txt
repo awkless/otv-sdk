@@ -47,12 +47,13 @@ else()
         otv-client
         PRIVATE
             "${CMAKE_CURRENT_SOURCE_DIR}/src/otv_client/main.cpp"
+            "${CMAKE_CURRENT_SOURCE_DIR}/src/otv_client/client.cpp"
     )
 
     target_link_libraries(
         otv-client
         PRIVATE
-            cxxopts::cxxopts spdlog::spdlog
+            cxxopts::cxxopts fmt::fmt ${OpenCV_LIBS}
     )
 
     target_include_directories(
@@ -60,6 +61,7 @@ else()
         PRIVATE
             ${websocketpp_SOURCE_DIR}
             ${asio_SOURCE_DIR}/asio/include
+            ${OpenCV_INCLUDE_DIRS}
     )
 
     target_compile_definitions(otv-client PRIVATE ASIO_STANDALONE)

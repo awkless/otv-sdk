@@ -26,10 +26,6 @@
 
 #include <otv_sdk/engine.hpp>
 
-// ---------------------------------------------------------------------------
-// RequestQueue
-// ---------------------------------------------------------------------------
-
 struct RequestQueue {
     std::queue<libcamera::Request*> pending;
     std::mutex pending_mutex;
@@ -38,10 +34,6 @@ struct RequestQueue {
     void on_request_completed(libcamera::Request* request);
     libcamera::Request* dequeue_request();
 };
-
-// ---------------------------------------------------------------------------
-// Rpi4BCamera
-// ---------------------------------------------------------------------------
 
 class Rpi4BCamera final {
 public:
@@ -70,10 +62,6 @@ private:
     RequestQueue& m_queue;
 };
 
-// ---------------------------------------------------------------------------
-// OtvWebSocketServer
-// ---------------------------------------------------------------------------
-
 class OtvWebSocketServer final {
 public:
     explicit OtvWebSocketServer(uint16_t port);
@@ -100,10 +88,6 @@ private:
     std::thread m_thread;
 };
 
-// ---------------------------------------------------------------------------
-// OtvAnalyzer
-// ---------------------------------------------------------------------------
-
 class OtvAnalyzer final {
 public:
     OtvAnalyzer(const otv_sdk::Config& config, Rpi4BCamera& rpi_cam,
@@ -125,10 +109,6 @@ private:
     int m_fed_frame;
 };
 
-// ---------------------------------------------------------------------------
-// CalibrationStreamer
-// ---------------------------------------------------------------------------
-
 class CalibrationStreamer final {
 public:
     CalibrationStreamer(Rpi4BCamera& cam, OtvWebSocketServer& ws, std::atomic<bool>& stop);
@@ -139,10 +119,6 @@ private:
     OtvWebSocketServer& m_ws;
     std::atomic<bool>& m_stop;
 };
-
-// ---------------------------------------------------------------------------
-// Rpi4BCameraError
-// ---------------------------------------------------------------------------
 
 class Rpi4BCameraError : public std::runtime_error {
 public:

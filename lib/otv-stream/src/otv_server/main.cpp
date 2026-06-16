@@ -73,14 +73,9 @@ int main(int argc, char** argv)
 {
     try {
         spdlog::stdout_color_mt("console");
-    } catch (const spdlog::spdlog_ex& err) {
-        fmt::println(stderr, "logger init failed: {}", err.what());
-        return 1;
-    }
 
-    CliOptions cli = parse_cli(argc, argv);
+        CliOptions cli = parse_cli(argc, argv);
 
-    try {
         otv_sdk::Config otv_config = otv_sdk::Config::from_file(cli.config_path);
         spdlog::info("loaded OTV config from {}", cli.config_path.string());
 
@@ -119,6 +114,9 @@ int main(int argc, char** argv)
 
         ws_server.stop();
         return 0;
+    } catch (const spdlog::spdlog_ex& err) {
+        fmt::println(stderr, "logger init failed: {}", err.what());
+        return 1;
     } catch (const Rpi4BCameraError& err) {
         spdlog::error("rpi 4B camera error: {}", err.what());
         return 1;

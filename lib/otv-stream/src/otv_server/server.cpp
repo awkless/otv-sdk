@@ -11,10 +11,6 @@
 
 #include "server.hpp"
 
-// ---------------------------------------------------------------------------
-// RequestQueue
-// ---------------------------------------------------------------------------
-
 void RequestQueue::on_request_completed(libcamera::Request* request)
 {
     if (request->status() == libcamera::Request::RequestCancelled)
@@ -42,10 +38,6 @@ libcamera::Request* RequestQueue::dequeue_request()
 
     return request;
 }
-
-// ---------------------------------------------------------------------------
-// Rpi4BCamera
-// ---------------------------------------------------------------------------
 
 Rpi4BCamera::Rpi4BCamera(const otv_sdk::Config& config, RequestQueue& queue)
     : m_queue(queue)
@@ -188,10 +180,6 @@ libcamera::Stream* Rpi4BCamera::stream() const { return m_stream; }
 libcamera::Request* Rpi4BCamera::dequeue_request() { return m_queue.dequeue_request(); }
 std::shared_ptr<libcamera::Camera> Rpi4BCamera::camera() { return m_camera; }
 
-// ---------------------------------------------------------------------------
-// OtvWebSocketServer
-// ---------------------------------------------------------------------------
-
 OtvWebSocketServer::OtvWebSocketServer(uint16_t port)
     : m_port(port)
 {
@@ -273,10 +261,6 @@ void OtvWebSocketServer::broadcast_binary(const std::vector<uchar>& data)
         }
     }
 }
-
-// ---------------------------------------------------------------------------
-// OtvAnalyzer
-// ---------------------------------------------------------------------------
 
 OtvAnalyzer::OtvAnalyzer(const otv_sdk::Config& config, Rpi4BCamera& rpi_cam,
                          OtvWebSocketServer& ws, std::atomic<bool>& stop)
@@ -421,10 +405,6 @@ cv::Mat OtvAnalyzer::scale_frame(const cv::Mat& src) const
     return dst;
 }
 
-// ---------------------------------------------------------------------------
-// CalibrationStreamer
-// ---------------------------------------------------------------------------
-
 CalibrationStreamer::CalibrationStreamer(Rpi4BCamera& cam, OtvWebSocketServer& ws,
                                         std::atomic<bool>& stop)
     : m_cam(cam)
@@ -466,12 +446,12 @@ void CalibrationStreamer::run()
                 const auto* base = static_cast<const uint8_t*>(mapped);
 
                 if (pixel_fmt == libcamera::formats::YUYV) {
-                    // YUYV packs two pixels as {Y0 U Y1 V}: sample every other byte.
+                    // INVARIANT: YUYV packs two pixels as {Y0 U Y1 V}: sample every other byte.
                     for (int r = 0; r < height; ++r)
                         for (int c = 0; c < width; ++c)
                             y_buf[r * width + c] = base[r * stride + c * 2];
                 } else {
-                    // YUV420 and NV12: Y is the first plane, rows padded to stride.
+                    // INVARIANT: YUV420 and NV12: Y is the first plane, rows padded to stride.
                     for (int r = 0; r < height; ++r)
                         std::memcpy(y_buf.data() + r * width, base + r * stride, width);
                 }
