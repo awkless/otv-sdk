@@ -6,19 +6,29 @@
 #ifndef OTV_STREAM_SERVER_HPP
 #define OTV_STREAM_SERVER_HPP
 
+#include <atomic>
 #include <condition_variable>
 #include <memory>
 #include <mutex>
 #include <queue>
+#include <set>
 #include <stdexcept>
+#include <thread>
 #include <vector>
 #include <sys/mman.h>
+
+#include <websocketpp/config/asio_no_tls.hpp>
+#include <websocketpp/server.hpp>
 
 #include <libcamera/libcamera.h>
 #include <opencv2/imgproc.hpp>
 #include <spdlog/spdlog.h>
 
 #include <otv_sdk/engine.hpp>
+
+// ---------------------------------------------------------------------------
+// RequestQueue
+// ---------------------------------------------------------------------------
 
 struct RequestQueue {
     std::queue<libcamera::Request*> pending;
@@ -28,6 +38,10 @@ struct RequestQueue {
     void on_request_completed(libcamera::Request* request);
     libcamera::Request* dequeue_request();
 };
+
+// ---------------------------------------------------------------------------
+// Rpi4BCamera
+// ---------------------------------------------------------------------------
 
 class Rpi4BCamera final {
 public:
@@ -43,7 +57,7 @@ public:
 
 private:
     void open_and_acquire();
-    void configure_stream(const otv_sdk::Config &config);
+    void configure_stream(const otv_sdk::Config& config);
     void setup_request_capture();
 
     std::unique_ptr<libcamera::CameraManager> m_cam_manager;
@@ -56,10 +70,46 @@ private:
     RequestQueue& m_queue;
 };
 
+// ---------------------------------------------------------------------------
+// OtvWebSocketServer
+// ---------------------------------------------------------------------------
+
+class OtvWebSocketServer final {
+public:
+    explicit OtvWebSocketServer(uint16_t port);
+    ~OtvWebSocketServer();
+
+    void start();
+    void stop();
+
+    // Thread-safe: may be called from any thread while start() is running.
+    void broadcast_text(const std::string& msg);
+    void broadcast_binary(const std::vector<uchar>& data);
+
+private:
+    using ws_server_t = websocketpp::server<websocketpp::config::asio>;
+    using connection_hdl = websocketpp::connection_hdl;
+
+    void on_open(connection_hdl hdl);
+    void on_close(connection_hdl hdl);
+
+    ws_server_t m_server;
+    std::set<connection_hdl, std::owner_less<connection_hdl>> m_connections;
+    std::mutex m_connections_mutex;
+    uint16_t m_port;
+    std::thread m_thread;
+};
+
+// ---------------------------------------------------------------------------
+// OtvAnalyzer
+// ---------------------------------------------------------------------------
+
 class OtvAnalyzer final {
 public:
-    OtvAnalyzer(const otv_sdk::Config& config, Rpi4BCamera& rpi_cam, std::atomic<bool>& stop);
+    OtvAnalyzer(const otv_sdk::Config& config, Rpi4BCamera& rpi_cam,
+                OtvWebSocketServer& ws, std::atomic<bool>& stop);
 
+    void set_mask(const cv::Mat& mask);
     void run();
     void log_results();
 
@@ -70,9 +120,29 @@ private:
     otv_sdk::OtvEngine m_engine;
     const otv_sdk::Config& m_config;
     Rpi4BCamera& m_rpi_cam;
+    OtvWebSocketServer& m_ws;
     std::atomic<bool>& m_stop;
     int m_fed_frame;
 };
+
+// ---------------------------------------------------------------------------
+// CalibrationStreamer
+// ---------------------------------------------------------------------------
+
+class CalibrationStreamer final {
+public:
+    CalibrationStreamer(Rpi4BCamera& cam, OtvWebSocketServer& ws, std::atomic<bool>& stop);
+    void run();
+
+private:
+    Rpi4BCamera& m_cam;
+    OtvWebSocketServer& m_ws;
+    std::atomic<bool>& m_stop;
+};
+
+// ---------------------------------------------------------------------------
+// Rpi4BCameraError
+// ---------------------------------------------------------------------------
 
 class Rpi4BCameraError : public std::runtime_error {
 public:

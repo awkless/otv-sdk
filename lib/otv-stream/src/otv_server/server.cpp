@@ -3,7 +3,17 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
+#include <cerrno>
+#include <cstring>
+
+#include <fmt/format.h>
+#include <opencv2/imgcodecs.hpp>
+
 #include "server.hpp"
+
+// ---------------------------------------------------------------------------
+// RequestQueue
+// ---------------------------------------------------------------------------
 
 void RequestQueue::on_request_completed(libcamera::Request* request)
 {
@@ -32,6 +42,10 @@ libcamera::Request* RequestQueue::dequeue_request()
 
     return request;
 }
+
+// ---------------------------------------------------------------------------
+// Rpi4BCamera
+// ---------------------------------------------------------------------------
 
 Rpi4BCamera::Rpi4BCamera(const otv_sdk::Config& config, RequestQueue& queue)
     : m_queue(queue)
@@ -170,21 +184,114 @@ void Rpi4BCamera::stop()
 }
 
 const libcamera::StreamConfiguration& Rpi4BCamera::stream_cfg() const { return m_stream_cfg; }
-
 libcamera::Stream* Rpi4BCamera::stream() const { return m_stream; }
-
 libcamera::Request* Rpi4BCamera::dequeue_request() { return m_queue.dequeue_request(); }
-
 std::shared_ptr<libcamera::Camera> Rpi4BCamera::camera() { return m_camera; }
 
-OtvAnalyzer::OtvAnalyzer(
-    const otv_sdk::Config& config, Rpi4BCamera& rpi_cam, std::atomic<bool>& stop)
+// ---------------------------------------------------------------------------
+// OtvWebSocketServer
+// ---------------------------------------------------------------------------
+
+OtvWebSocketServer::OtvWebSocketServer(uint16_t port)
+    : m_port(port)
+{
+    m_server.clear_access_channels(websocketpp::log::alevel::all);
+    m_server.clear_error_channels(websocketpp::log::elevel::all);
+    m_server.init_asio();
+    m_server.set_reuse_addr(true);
+
+    m_server.set_open_handler([this](connection_hdl hdl) { on_open(hdl); });
+    m_server.set_close_handler([this](connection_hdl hdl) { on_close(hdl); });
+}
+
+OtvWebSocketServer::~OtvWebSocketServer()
+{
+    stop();
+}
+
+void OtvWebSocketServer::on_open(connection_hdl hdl)
+{
+    std::lock_guard<std::mutex> lock(m_connections_mutex);
+    m_connections.insert(hdl);
+    spdlog::info("ws client connected (total: {})", m_connections.size());
+}
+
+void OtvWebSocketServer::on_close(connection_hdl hdl)
+{
+    std::lock_guard<std::mutex> lock(m_connections_mutex);
+    m_connections.erase(hdl);
+    spdlog::info("ws client disconnected (total: {})", m_connections.size());
+}
+
+void OtvWebSocketServer::start()
+{
+    m_server.listen(m_port);
+    m_server.start_accept();
+    spdlog::info("ws server listening on port {}", m_port);
+    m_thread = std::thread([this]() { m_server.run(); });
+}
+
+void OtvWebSocketServer::stop()
+{
+    if (!m_thread.joinable())
+        return;
+
+    websocketpp::lib::error_code ec;
+    m_server.stop_listening(ec);
+
+    {
+        std::lock_guard<std::mutex> lock(m_connections_mutex);
+        for (auto& hdl : m_connections) {
+            m_server.close(hdl, websocketpp::close::status::going_away, "server shutting down", ec);
+        }
+    }
+
+    m_server.stop();
+    m_thread.join();
+}
+
+void OtvWebSocketServer::broadcast_text(const std::string& msg)
+{
+    std::lock_guard<std::mutex> lock(m_connections_mutex);
+    for (auto& hdl : m_connections) {
+        websocketpp::lib::error_code ec;
+        m_server.send(hdl, msg, websocketpp::frame::opcode::text, ec);
+        if (ec) {
+            spdlog::warn("ws text send error: {}", ec.message());
+        }
+    }
+}
+
+void OtvWebSocketServer::broadcast_binary(const std::vector<uchar>& data)
+{
+    std::lock_guard<std::mutex> lock(m_connections_mutex);
+    for (auto& hdl : m_connections) {
+        websocketpp::lib::error_code ec;
+        m_server.send(hdl, data.data(), data.size(), websocketpp::frame::opcode::binary, ec);
+        if (ec) {
+            spdlog::warn("ws binary send error: {}", ec.message());
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// OtvAnalyzer
+// ---------------------------------------------------------------------------
+
+OtvAnalyzer::OtvAnalyzer(const otv_sdk::Config& config, Rpi4BCamera& rpi_cam,
+                         OtvWebSocketServer& ws, std::atomic<bool>& stop)
     : m_engine(otv_sdk::OtvEngine(config))
     , m_config(config)
     , m_rpi_cam(rpi_cam)
+    , m_ws(ws)
     , m_stop(stop)
     , m_fed_frame(0)
 {
+}
+
+void OtvAnalyzer::set_mask(const cv::Mat& mask)
+{
+    m_engine.set_mask(mask);
 }
 
 void OtvAnalyzer::run()
@@ -213,8 +320,13 @@ void OtvAnalyzer::run()
                 m_engine.process_frame(scaled);
                 ++fed_frame;
 
+                const otv_sdk::VelocityStats s = m_engine.stats();
+                m_ws.broadcast_text(fmt::format(
+                    "{{\"frame\":{},\"avg\":{:.4f},\"max\":{:.4f},"
+                    "\"min\":{:.4f},\"std_dev\":{:.4f},\"count\":{}}}",
+                    fed_frame, s.avg, s.max, s.min, s.std_dev, s.count));
+
                 if (fed_frame % 30 == 0) {
-                    const otv_sdk::VelocityStats s = m_engine.stats();
                     spdlog::info("Frames processed: {}  |  velocity — "
                                  "avg={:.3f}  max={:.3f}  min={:.3f}  "
                                  "stddev={:.3f}  n={}",
@@ -307,4 +419,79 @@ cv::Mat OtvAnalyzer::scale_frame(const cv::Mat& src) const
         cv::Size(static_cast<int>(static_cast<float>(src.cols) * res),
             static_cast<int>(static_cast<float>(src.rows) * res)));
     return dst;
+}
+
+// ---------------------------------------------------------------------------
+// CalibrationStreamer
+// ---------------------------------------------------------------------------
+
+CalibrationStreamer::CalibrationStreamer(Rpi4BCamera& cam, OtvWebSocketServer& ws,
+                                        std::atomic<bool>& stop)
+    : m_cam(cam)
+    , m_ws(ws)
+    , m_stop(stop)
+{
+}
+
+void CalibrationStreamer::run()
+{
+    m_cam.start();
+
+    const int width  = static_cast<int>(m_cam.stream_cfg().size.width);
+    const int height = static_cast<int>(m_cam.stream_cfg().size.height);
+    const int stride = static_cast<int>(m_cam.stream_cfg().stride);
+    const auto pixel_fmt = m_cam.stream_cfg().pixelFormat;
+
+    spdlog::info("calibration mode: {}x{} stride={} format={}",
+                 width, height, stride, pixel_fmt.toString());
+
+    const std::string metadata =
+        fmt::format("{{\"width\":{},\"height\":{}}}", width, height);
+    std::vector<uchar> y_buf(static_cast<std::size_t>(width) * height);
+    std::vector<uchar> jpeg_buf;
+
+    while (!m_stop.load()) {
+        libcamera::Request* request = m_cam.dequeue_request();
+        if (!request)
+            continue;
+
+        const libcamera::FrameBuffer* fb = request->buffers().at(m_cam.stream());
+        const auto& planes = fb->planes();
+
+        if (!planes.empty()) {
+            const auto& plane0 = planes[0];
+            void* mapped = ::mmap(nullptr, plane0.length, PROT_READ, MAP_SHARED,
+                                  plane0.fd.get(), plane0.offset);
+            if (mapped != MAP_FAILED) {
+                const auto* base = static_cast<const uint8_t*>(mapped);
+
+                if (pixel_fmt == libcamera::formats::YUYV) {
+                    // YUYV packs two pixels as {Y0 U Y1 V}: sample every other byte.
+                    for (int r = 0; r < height; ++r)
+                        for (int c = 0; c < width; ++c)
+                            y_buf[r * width + c] = base[r * stride + c * 2];
+                } else {
+                    // YUV420 and NV12: Y is the first plane, rows padded to stride.
+                    for (int r = 0; r < height; ++r)
+                        std::memcpy(y_buf.data() + r * width, base + r * stride, width);
+                }
+
+                cv::Mat gray(height, width, CV_8UC1, y_buf.data());
+                cv::imencode(".jpg", gray, jpeg_buf, {cv::IMWRITE_JPEG_QUALITY, 60});
+                m_ws.broadcast_text(metadata);
+                m_ws.broadcast_binary(jpeg_buf);
+                ::munmap(mapped, plane0.length);
+            } else {
+                spdlog::error("mmap failed: {}", std::strerror(errno));
+            }
+        }
+
+        request->reuse(libcamera::Request::ReuseBuffers);
+        if (m_cam.camera()->queueRequest(request)) {
+            spdlog::error("Failed to requeue calibration request — stopping");
+            m_stop.store(true);
+        }
+    }
+
+    m_cam.stop();
 }
