@@ -22,7 +22,9 @@
 struct CliOptions {
     std::string host;
     uint16_t    port;
+    uint16_t    viz_port  = 0;
     bool        calibrate = false;
+    bool        has_viz   = false;
 };
 
 static CliOptions
@@ -31,6 +33,8 @@ parse_cli(int argc, char** argv)
     cxxopts::Options opts("otv-client", "OTV WebSocket client");
     opts.add_options()
         ("c,calibrate", "Enter calibrate mode (display raw camera frames)")
+        ("viz-port", "Port for velocity visualization stream (result mode only)",
+         cxxopts::value<uint16_t>())
         ("h,help",      "Display help message")
         ("host", "Server IP address",    cxxopts::value<std::string>())
         ("port", "WebSocket port number", cxxopts::value<uint16_t>());
@@ -56,6 +60,10 @@ parse_cli(int argc, char** argv)
         result.host      = args["host"].as<std::string>();
         result.port      = args["port"].as<uint16_t>();
         result.calibrate = args.count("calibrate") > 0;
+        if (args.count("viz-port")) {
+            result.viz_port = args["viz-port"].as<uint16_t>();
+            result.has_viz  = true;
+        }
         return result;
     } catch (const cxxopts::exceptions::exception& e) {
         fmt::println(stderr, "CLI error: {}", e.what());
@@ -141,8 +149,46 @@ int main(int argc, char** argv)
                 stop_flag.store(true);
             });
 
-        while (!stop_flag.load())
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        if (cli.has_viz) {
+            // Declared before viz_client so it outlives the client thread (LIFO).
+            SharedFrame shared;
+            OtvClient viz_client;
+            const std::string viz_uri = fmt::format("ws://{}:{}", cli.host, cli.viz_port);
+
+            fmt::println("viz mode — connecting to {}", viz_uri);
+            fmt::println("press 'q' or ESC to quit");
+            viz_client.connect(viz_uri,
+                nullptr,
+                [&shared](const std::string& payload) {
+                    std::vector<uchar> jpeg(payload.begin(), payload.end());
+                    cv::Mat frame = cv::imdecode(jpeg, cv::IMREAD_COLOR);
+                    if (frame.empty())
+                        return;
+                    std::lock_guard<std::mutex> lock(shared.mutex);
+                    frame.copyTo(shared.mat);
+                    shared.updated = true;
+                },
+                [&stop_flag]() { stop_flag.store(true); });
+
+            cv::namedWindow("OTV Visualization", cv::WINDOW_NORMAL);
+            while (!stop_flag.load()) {
+                {
+                    std::lock_guard<std::mutex> lock(shared.mutex);
+                    if (shared.updated && !shared.mat.empty()) {
+                        cv::imshow("OTV Visualization", shared.mat);
+                        shared.updated = false;
+                    }
+                }
+                int key = cv::waitKey(30);
+                if (key == 'q' || key == 27)
+                    stop_flag.store(true);
+            }
+            cv::destroyAllWindows();
+            viz_client.close();
+        } else {
+            while (!stop_flag.load())
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
 
         fmt::println("");
         client.close();

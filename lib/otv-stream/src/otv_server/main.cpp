@@ -6,6 +6,7 @@
 #include <atomic>
 #include <csignal>
 #include <filesystem>
+#include <memory>
 #include <string>
 
 #include <cxxopts.hpp>
@@ -20,6 +21,8 @@
 
 struct CliOptions {
     uint16_t port;
+    uint16_t viz_port = 0;
+    bool     has_viz  = false;
     std::filesystem::path config_path;
     std::filesystem::path mask_path;
     bool calibrate = false;
@@ -33,6 +36,8 @@ parse_cli(int argc, char** argv)
         ("c,calibrate", "Enter calibration mode (streams raw camera frames; disables OTV analysis)")
         ("m,mask", "Apply mask image during OTV analysis (0=exclude, 255=include)",
          cxxopts::value<std::string>())
+        ("viz-port", "WebSocket port for velocity visualization frames (analysis mode only)",
+         cxxopts::value<uint16_t>())
         ("h,help", "Print help message")
         ("port", "WebSocket port number", cxxopts::value<uint16_t>())
         ("config", "Path to OTV TOML configuration file", cxxopts::value<std::string>());
@@ -62,6 +67,11 @@ parse_cli(int argc, char** argv)
         if (args.count("mask"))
             result.mask_path = args["mask"].as<std::string>();
 
+        if (args.count("viz-port")) {
+            result.viz_port = args["viz-port"].as<uint16_t>();
+            result.has_viz  = true;
+        }
+
         return result;
     } catch (const cxxopts::exceptions::exception& e) {
         fmt::println(stderr, "CLI error: {}", e.what());
@@ -82,6 +92,25 @@ int main(int argc, char** argv)
         OtvWebSocketServer ws_server(cli.port);
         ws_server.start();
 
+        std::unique_ptr<OtvWebSocketServer> viz_ws;
+        if (cli.has_viz) {
+            viz_ws = std::make_unique<OtvWebSocketServer>(cli.viz_port);
+            viz_ws->start();
+            spdlog::info("viz WebSocket server listening on port {}", cli.viz_port);
+        }
+
+        cv::Mat mask;
+        if (!cli.mask_path.empty()) {
+            mask = cv::imread(cli.mask_path.string(), cv::IMREAD_GRAYSCALE);
+            if (mask.empty()) {
+                spdlog::error("could not load mask '{}'", cli.mask_path.string());
+                if (viz_ws) viz_ws->stop();
+                ws_server.stop();
+                return 1;
+            }
+            spdlog::info("mask loaded from '{}'", cli.mask_path.string());
+        }
+
         RequestQueue queue;
         Rpi4BCamera rpi_cam(otv_config, queue);
 
@@ -92,26 +121,17 @@ int main(int argc, char** argv)
 
         if (cli.calibrate) {
             spdlog::info("entering calibration mode");
-            CalibrationStreamer streamer(rpi_cam, ws_server, stop_flag);
+            CalibrationStreamer streamer(rpi_cam, ws_server, stop_flag, mask);
             streamer.run();
         } else {
-            OtvAnalyzer analyzer(otv_config, rpi_cam, ws_server, stop_flag);
-
-            if (!cli.mask_path.empty()) {
-                cv::Mat mask = cv::imread(cli.mask_path.string(), cv::IMREAD_UNCHANGED);
-                if (mask.empty()) {
-                    spdlog::error("could not load mask '{}'", cli.mask_path.string());
-                    ws_server.stop();
-                    return 1;
-                }
+            OtvAnalyzer analyzer(otv_config, rpi_cam, ws_server, viz_ws.get(), stop_flag);
+            if (!mask.empty())
                 analyzer.set_mask(mask);
-                spdlog::info("mask loaded from '{}'", cli.mask_path.string());
-            }
-
             analyzer.run();
             analyzer.log_results();
         }
 
+        if (viz_ws) viz_ws->stop();
         ws_server.stop();
         return 0;
     } catch (const spdlog::spdlog_ex& err) {

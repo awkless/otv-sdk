@@ -4,12 +4,74 @@
  */
 
 #include <cerrno>
+#include <cmath>
 #include <cstring>
+#include <limits>
+#include <string>
 
 #include <fmt/format.h>
 #include <opencv2/imgcodecs.hpp>
 
 #include "server.hpp"
+
+static cv::Mat apply_background_subtraction(const cv::Mat& src, cv::Mat& background)
+{
+    cv::Mat src_float;
+    src.convertTo(src_float, CV_32F);
+
+    if (background.empty())
+        background = src_float.clone();
+
+    cv::accumulateWeighted(src_float, background, 0.01);
+
+    cv::Mat diff;
+    cv::absdiff(src_float, background, diff);
+    diff.convertTo(diff, CV_8U);
+    return diff;
+}
+
+static cv::Mat apply_clahe(const cv::Mat& src)
+{
+    static const cv::Ptr<cv::CLAHE> clahe = cv::createCLAHE(2.0, cv::Size(8, 8));
+    cv::Mat dst;
+    clahe->apply(src, dst);
+    return dst;
+}
+
+static cv::Mat fill_background(
+    const cv::Mat& frame, const cv::Mat& colored, const cv::Mat& normalized)
+{
+    cv::Mat out(frame.size(), CV_8UC3, cv::Scalar::all(0));
+    for (int row = 0; row < frame.rows; ++row) {
+        for (int col = 0; col < frame.cols; ++col) {
+            const bool is_bg = normalized.at<uchar>(row, col) == 0;
+            out.at<cv::Vec3b>(row, col)
+                = is_bg ? frame.at<cv::Vec3b>(row, col) : colored.at<cv::Vec3b>(row, col);
+        }
+    }
+    return out;
+}
+
+static void put_labels(const std::vector<std::string>& labels, cv::Mat& frame)
+{
+    static constexpr double k_font_scale   = 0.5;
+    static constexpr int    k_start_y      = 20;
+    static constexpr int    k_line_height  = 20;
+
+    const int    fontface  = cv::FONT_HERSHEY_SIMPLEX;
+    const int    thickness = 1;
+
+    for (int i = 0; i < static_cast<int>(labels.size()); ++i) {
+        cv::Point pt(0, k_start_y + i * k_line_height);
+        int baseline = 0;
+        cv::Size text = cv::getTextSize(labels[i], fontface, k_font_scale, thickness, &baseline);
+        cv::rectangle(frame, pt + cv::Point(0, baseline),
+                      pt + cv::Point(text.width, -text.height),
+                      cv::Scalar::all(0), cv::FILLED);
+        cv::putText(frame, labels[i], pt, fontface, k_font_scale,
+                    cv::Scalar::all(255), thickness, cv::LINE_8);
+    }
+}
 
 void RequestQueue::on_request_completed(libcamera::Request* request)
 {
@@ -41,6 +103,7 @@ libcamera::Request* RequestQueue::dequeue_request()
 
 Rpi4BCamera::Rpi4BCamera(const otv_sdk::Config& config, RequestQueue& queue)
     : m_queue(queue)
+    , m_fps(config.video.fps)
 {
     open_and_acquire();
     configure_stream(config);
@@ -154,7 +217,14 @@ void Rpi4BCamera::setup_request_capture()
 
 void Rpi4BCamera::start()
 {
-    if (m_camera->start()) {
+    // Clamp frame duration to exactly 1/fps seconds so auto-exposure cannot
+    // drop the frame rate below the configured value in dim conditions.
+    const int64_t frame_duration_us = 1'000'000 / m_fps;
+    libcamera::ControlList controls;
+    controls.set(libcamera::controls::FrameDurationLimits,
+                 libcamera::Span<const int64_t, 2>({ frame_duration_us, frame_duration_us }));
+
+    if (m_camera->start(&controls)) {
         throw Rpi4BCameraError("failed to start camera");
     }
 
@@ -166,7 +236,7 @@ void Rpi4BCamera::start()
         }
     }
 
-    spdlog::info("camera capture started");
+    spdlog::info("camera capture started at {} fps (frame_duration={}µs)", m_fps, frame_duration_us);
 }
 
 void Rpi4BCamera::stop()
@@ -263,14 +333,19 @@ void OtvWebSocketServer::broadcast_binary(const std::vector<uchar>& data)
 }
 
 OtvAnalyzer::OtvAnalyzer(const otv_sdk::Config& config, Rpi4BCamera& rpi_cam,
-                         OtvWebSocketServer& ws, std::atomic<bool>& stop)
+                         OtvWebSocketServer& ws, OtvWebSocketServer* viz_ws,
+                         std::atomic<bool>& stop)
     : m_engine(otv_sdk::OtvEngine(config))
     , m_config(config)
     , m_rpi_cam(rpi_cam)
     , m_ws(ws)
+    , m_viz_ws(viz_ws)
     , m_stop(stop)
     , m_fed_frame(0)
 {
+    m_running_min = std::numeric_limits<float>::max();
+    if (m_viz_ws)
+        m_engine.enable_snapshots();
 }
 
 void OtvAnalyzer::set_mask(const cv::Mat& mask)
@@ -300,9 +375,12 @@ void OtvAnalyzer::run()
             if (gray.empty()) {
                 spdlog::warn("Frame {} produced an empty Mat — skipping", raw_frame - 1);
             } else {
-                cv::Mat scaled = scale_frame(gray);
+                cv::Mat scaled = scale_frame(apply_clahe(gray));
                 m_engine.process_frame(scaled);
                 ++fed_frame;
+
+                if (m_viz_ws)
+                    broadcast_viz_frame(scaled);
 
                 const otv_sdk::VelocityStats s = m_engine.stats();
                 m_ws.broadcast_text(fmt::format(
@@ -328,6 +406,67 @@ void OtvAnalyzer::run()
 
     m_rpi_cam.stop();
     m_fed_frame = fed_frame;
+}
+
+void OtvAnalyzer::broadcast_viz_frame(const cv::Mat& gray)
+{
+    if (m_vel_img.empty())
+        m_vel_img = cv::Mat(gray.size(), CV_32F, cv::Scalar(0));
+
+    const auto& snaps = m_engine.snapshots();
+    m_drawn_counts.resize(snaps.size(), 0);
+
+    for (std::size_t i = 0; i < snaps.size(); ++i) {
+        const auto& snap = snaps[i];
+        const int already = m_drawn_counts[i];
+        for (int j = already; j < static_cast<int>(snap.current.size()); ++j) {
+            cv::line(m_vel_img, snap.current[j].pt, snap.predicted[j].pt,
+                     snap.velocities[j], 1, cv::LINE_AA);
+            const float v = snap.velocities[j];
+            ++m_running_count;
+            m_running_sum    += v;
+            m_running_sum_sq += v * v;
+            m_running_max = std::max(m_running_max, v);
+            m_running_min = std::min(m_running_min, v);
+        }
+        m_drawn_counts[i] = static_cast<int>(snap.current.size());
+    }
+
+    cv::Mat normalized, colored;
+    cv::normalize(m_vel_img, normalized, 0.0, 255.0, cv::NORM_MINMAX);
+    normalized.convertTo(normalized, CV_8U);
+    cv::applyColorMap(normalized, colored, cv::COLORMAP_JET);
+
+    cv::Mat bgr;
+    cv::cvtColor(gray, bgr, cv::COLOR_GRAY2BGR);
+    cv::Mat filled = fill_background(bgr, colored, normalized);
+
+    const float avg_disp = (m_running_count > 0)
+        ? m_running_sum / static_cast<float>(m_running_count) : 0.0f;
+    const float variance = (m_running_count > 0)
+        ? std::max(0.0f, m_running_sum_sq / static_cast<float>(m_running_count)
+                         - avg_disp * avg_disp)
+        : 0.0f;
+    const float std_disp = std::sqrt(variance);
+
+    const float disp_min = (m_running_count > 0) ? m_running_min : 0.0f;
+    std::vector<std::string> labels = {
+        m_running_count == 0 ? "velocity avg: none"
+                             : fmt::format("velocity avg: {:.4f} m/s", avg_disp),
+        m_running_count == 0 ? "velocity max: none"
+                             : fmt::format("velocity max: {:.4f} m/s", m_running_max),
+        m_running_count == 0 ? "velocity min: none"
+                             : fmt::format("velocity min: {:.4f} m/s", disp_min),
+        m_running_count == 0 ? "standard deviation: none"
+                             : fmt::format("standard deviation: {:.4f} m/s", std_disp),
+        m_running_count == 0 ? "trajectories: none"
+                             : fmt::format("trajectories: {}", m_running_count),
+    };
+    put_labels(labels, filled);
+
+    std::vector<uchar> jpeg_buf;
+    cv::imencode(".jpg", filled, jpeg_buf, { cv::IMWRITE_JPEG_QUALITY, 75 });
+    m_viz_ws->broadcast_binary(jpeg_buf);
 }
 
 void OtvAnalyzer::log_results()
@@ -406,11 +545,17 @@ cv::Mat OtvAnalyzer::scale_frame(const cv::Mat& src) const
 }
 
 CalibrationStreamer::CalibrationStreamer(Rpi4BCamera& cam, OtvWebSocketServer& ws,
-                                        std::atomic<bool>& stop)
+                                        std::atomic<bool>& stop, cv::Mat mask)
     : m_cam(cam)
     , m_ws(ws)
     , m_stop(stop)
 {
+    if (!mask.empty()) {
+        if (mask.channels() > 1)
+            cv::cvtColor(mask, m_mask, cv::COLOR_BGR2GRAY);
+        else
+            m_mask = std::move(mask);
+    }
 }
 
 void CalibrationStreamer::run()
@@ -457,7 +602,16 @@ void CalibrationStreamer::run()
                 }
 
                 cv::Mat gray(height, width, CV_8UC1, y_buf.data());
-                cv::imencode(".jpg", gray, jpeg_buf, {cv::IMWRITE_JPEG_QUALITY, 60});
+                cv::Mat processed = apply_clahe(apply_background_subtraction(gray, m_background));
+                if (!m_mask.empty()) {
+                    cv::Mat mask_scaled;
+                    if (m_mask.size() != processed.size())
+                        cv::resize(m_mask, mask_scaled, processed.size(), 0, 0, cv::INTER_NEAREST);
+                    else
+                        mask_scaled = m_mask;
+                    processed.setTo(0, mask_scaled == 0);
+                }
+                cv::imencode(".jpg", processed, jpeg_buf, {cv::IMWRITE_JPEG_QUALITY, 60});
                 m_ws.broadcast_text(metadata);
                 m_ws.broadcast_binary(jpeg_buf);
                 ::munmap(mapped, plane0.length);
