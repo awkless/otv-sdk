@@ -21,8 +21,9 @@
 
 #include <otv_sdk/engine.hpp>
 
-static void write_stats(const std::filesystem::path& output_dir,
-    const otv_sdk::VelocityStats& stats, float elapsed_seconds)
+static void
+write_stats(const std::filesystem::path& output_dir, const otv_sdk::VelocityStats& stats,
+    float elapsed_seconds)
 {
     std::filesystem::create_directories(output_dir);
     std::filesystem::path file_path = output_dir / "stats_synthesis.csv";
@@ -41,7 +42,8 @@ static void write_stats(const std::filesystem::path& output_dir,
       << "time," << elapsed_seconds;
 }
 
-static void write_sub_regions(
+static void
+write_sub_regions(
     const std::filesystem::path& output_dir, const otv_sdk::SubRegion& sub_regions, int width)
 {
     std::filesystem::create_directories(output_dir);
@@ -89,7 +91,8 @@ struct CliOptions {
     bool visualize = false;
 };
 
-static CliOptions parse_cli(int argc, char** argv)
+static CliOptions
+parse_cli(int argc, char** argv)
 {
     auto options = CliOptions {};
     cxxopts::Options cli("otv-analyze", "perform OTV analysis on video files");
@@ -137,8 +140,8 @@ static CliOptions parse_cli(int argc, char** argv)
     }
 }
 
-static cv::Mat fill_background(
-    const cv::Mat& frame, const cv::Mat& colored, const cv::Mat& normalized)
+static cv::Mat
+fill_background(const cv::Mat& frame, const cv::Mat& colored, const cv::Mat& normalized)
 {
     cv::Mat out(frame.size(), CV_8UC3, cv::Scalar::all(0));
 
@@ -153,7 +156,8 @@ static cv::Mat fill_background(
     return out;
 }
 
-static void put_labels(const std::vector<std::string>& labels, cv::Mat& frame)
+static void
+put_labels(const std::vector<std::string>& labels, cv::Mat& frame)
 {
     static constexpr double k_label_font_scale = 0.5;
     static constexpr int k_label_start_y = 20;
@@ -175,9 +179,10 @@ static void put_labels(const std::vector<std::string>& labels, cv::Mat& frame)
     }
 }
 
-static void write_video(const std::filesystem::path& video_path,
-    const std::filesystem::path& output_dir, const otv_sdk::Config& config,
-    const std::vector<otv_sdk::FrameSnapshot>& snapshots, const otv_sdk::VelocityStats& stats)
+static void
+write_video(const std::filesystem::path& video_path, const std::filesystem::path& output_dir,
+    const otv_sdk::Config& config, const std::vector<otv_sdk::FrameSnapshot>& snapshots,
+    const otv_sdk::VelocityStats& stats)
 {
     cv::VideoCapture cap(video_path.string());
     if (!cap.isOpened()) {
@@ -289,7 +294,8 @@ static void write_video(const std::filesystem::path& video_path,
     fmt::println("Visualization written to '{}'", out_path);
 }
 
-static void run_otv_engine(CliOptions options)
+static void
+run_otv_engine(CliOptions options)
 {
     otv_sdk::Config config = otv_sdk::Config::from_file(options.config_path);
 
@@ -358,7 +364,8 @@ static void run_otv_engine(CliOptions options)
     fmt::println("Done. Results written to '{}'", options.output_dir.string());
 }
 
-int main(int argc, char** argv)
+int
+main(int argc, char** argv)
 {
     auto options = parse_cli(argc, argv);
     try {

@@ -2,155 +2,147 @@
 // SPDX-FileCopyrightText: 2026 Huidae Cho <hcho@nmsu.edu>
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-#include <filesystem>
-#include <optional>
-#include <string_view>
 #include <algorithm>
 #include <cmath>
+#include <filesystem>
 #include <limits>
+#include <optional>
+#include <string_view>
 
+#include <fmt/format.h>
 #include <opencv2/core.hpp>
 #include <opencv2/features2d.hpp>
 #include <opencv2/imgproc.hpp>
 #include <opencv2/video/tracking.hpp>
-#include <fmt/format.h>
 #include <toml++/toml.hpp>
 
 #include "otv_sdk/engine.hpp"
 
 namespace otv_sdk {
 namespace {
-constexpr float FULL_FRAME_RESOLUTION = 1.0f;
-constexpr float HALF_FRAME_RESOLUTION = 0.5f;
-constexpr float QUARTER_FRAME_RESOLUTION = 0.25f;
-constexpr float PI = 3.14159265358979323846f;
+    constexpr float FULL_FRAME_RESOLUTION = 1.0f;
+    constexpr float HALF_FRAME_RESOLUTION = 0.5f;
+    constexpr float QUARTER_FRAME_RESOLUTION = 0.25f;
+    constexpr float PI = 3.14159265358979323846f;
 
-float
-get_angle(const cv::KeyPoint& kp1, const cv::KeyPoint& kp2)
-{
-    // INVARIANT: Angle in degrees of the displacement vector from kp1 to kp2.
-    constexpr float k_rad_to_degree = 180.0f / PI;
-    return std::atan2(kp2.pt.y - kp1.pt.y, kp2.pt.x - kp1.pt.x) * k_rad_to_degree;
-}
-
-float
-get_velocity(const cv::KeyPoint& kp1,
-             const cv::KeyPoint& kp2,
-             float pixel_to_real,
-             float time_delta,
-             float fps)
-{
-    // INVARIANT: Real-world velocity for a tracked trajectory.
-    float magnitude = static_cast<float>(cv::norm(kp2.pt - kp1.pt));
-    return magnitude * pixel_to_real * fps / time_delta;
-}
-
-cv::Mat
-apply_background_subtraction(const cv::Mat& src, cv::Mat& background)
-{
-    constexpr double k_accumulate_weight = 0.01;
-
-    cv::Mat src_float;
-    src.convertTo(src_float, CV_32F);
-
-    if (background.empty())
-        background = src_float.clone();
-
-    cv::accumulateWeighted(src_float, background, k_accumulate_weight);
-
-    cv::Mat diff;
-    cv::absdiff(src_float, background, diff);
-    diff.convertTo(diff, CV_8U);
-    return diff;
-}
-
-cv::Mat
-apply_clahe(const cv::Mat& src)
-{
-    constexpr double k_clahe_clip_limit = 2.0;
-    constexpr int k_clahe_tile_size = 8;
-
-    static const cv::Ptr<cv::CLAHE> clahe
-        = cv::createCLAHE(k_clahe_clip_limit, cv::Size(k_clahe_tile_size, k_clahe_tile_size));
-    cv::Mat dst;
-    clahe->apply(src, dst);
-    return dst;
-}
-
-bool
-angle_in_range(const cv::KeyPoint& kp1, const cv::KeyPoint& kp2, float min_angle, float max_angle)
-{
-    float angle = get_angle(kp1, kp2);
-    return angle > min_angle && angle < max_angle;
-}
-
-bool
-partial_filter(const cv::KeyPoint& kp1,
-               const cv::KeyPoint& kp2,
-               float min_angle,
-               float max_angle,
-               float max_distance)
-{
-    // INVARIANT: Accept a point if its displacement is within the expected angle range and does
-    // not exceed max_distance pixels.
-    if (static_cast<float>(cv::norm(kp2.pt - kp1.pt)) > max_distance)
-        return false;
-    return angle_in_range(kp1, kp2, min_angle, max_angle);
-}
-
-bool
-final_filter(const cv::KeyPoint& kp1,
-             const cv::KeyPoint& kp2,
-             float min_distance,
-             float min_angle,
-             float max_angle)
-{
-    // INVARIANT: Accept a completed trajectory if it has traveled at least min_distance pixels
-    // within the expected angle range.
-    if (static_cast<float>(cv::norm(kp2.pt - kp1.pt)) < min_distance)
-        return false;
-    return angle_in_range(kp1, kp2, min_angle, max_angle);
-}
-
-VelocityStats
-compute_stats(const std::vector<std::vector<float>>& velocities)
-{
-    // INVARIANT: Only positive velocities contribute to statistics.
-    //   - Compute velocity statistics over all frames.
-    VelocityStats result;
-    result.min = std::numeric_limits<float>::max();
-
-    for (const auto& frame : velocities) {
-        for (float vel : frame) {
-            if (vel > 0.0f) {
-                result.avg += vel;
-                result.max = std::max(result.max, vel);
-                result.min = std::min(result.min, vel);
-                ++result.count;
-            }
-        }
+    float
+    get_angle(const cv::KeyPoint& kp1, const cv::KeyPoint& kp2)
+    {
+        // INVARIANT: Angle in degrees of the displacement vector from kp1 to kp2.
+        constexpr float k_rad_to_degree = 180.0f / PI;
+        return std::atan2(kp2.pt.y - kp1.pt.y, kp2.pt.x - kp1.pt.x) * k_rad_to_degree;
     }
 
-    if (result.count == 0) {
-        result.min = 0.0f;
+    float
+    get_velocity(const cv::KeyPoint& kp1, const cv::KeyPoint& kp2, float pixel_to_real,
+        float time_delta, float fps)
+    {
+        // INVARIANT: Real-world velocity for a tracked trajectory.
+        float magnitude = static_cast<float>(cv::norm(kp2.pt - kp1.pt));
+        return magnitude * pixel_to_real * fps / time_delta;
+    }
+
+    cv::Mat
+    apply_background_subtraction(const cv::Mat& src, cv::Mat& background)
+    {
+        constexpr double k_accumulate_weight = 0.01;
+
+        cv::Mat src_float;
+        src.convertTo(src_float, CV_32F);
+
+        if (background.empty())
+            background = src_float.clone();
+
+        cv::accumulateWeighted(src_float, background, k_accumulate_weight);
+
+        cv::Mat diff;
+        cv::absdiff(src_float, background, diff);
+        diff.convertTo(diff, CV_8U);
+        return diff;
+    }
+
+    cv::Mat
+    apply_clahe(const cv::Mat& src)
+    {
+        constexpr double k_clahe_clip_limit = 2.0;
+        constexpr int k_clahe_tile_size = 8;
+
+        static const cv::Ptr<cv::CLAHE> clahe
+            = cv::createCLAHE(k_clahe_clip_limit, cv::Size(k_clahe_tile_size, k_clahe_tile_size));
+        cv::Mat dst;
+        clahe->apply(src, dst);
+        return dst;
+    }
+
+    bool
+    angle_in_range(
+        const cv::KeyPoint& kp1, const cv::KeyPoint& kp2, float min_angle, float max_angle)
+    {
+        float angle = get_angle(kp1, kp2);
+        return angle > min_angle && angle < max_angle;
+    }
+
+    bool
+    partial_filter(const cv::KeyPoint& kp1, const cv::KeyPoint& kp2, float min_angle,
+        float max_angle, float max_distance)
+    {
+        // INVARIANT: Accept a point if its displacement is within the expected angle range and does
+        // not exceed max_distance pixels.
+        if (static_cast<float>(cv::norm(kp2.pt - kp1.pt)) > max_distance)
+            return false;
+        return angle_in_range(kp1, kp2, min_angle, max_angle);
+    }
+
+    bool
+    final_filter(const cv::KeyPoint& kp1, const cv::KeyPoint& kp2, float min_distance,
+        float min_angle, float max_angle)
+    {
+        // INVARIANT: Accept a completed trajectory if it has traveled at least min_distance pixels
+        // within the expected angle range.
+        if (static_cast<float>(cv::norm(kp2.pt - kp1.pt)) < min_distance)
+            return false;
+        return angle_in_range(kp1, kp2, min_angle, max_angle);
+    }
+
+    VelocityStats
+    compute_stats(const std::vector<std::vector<float>>& velocities)
+    {
+        // INVARIANT: Only positive velocities contribute to statistics.
+        //   - Compute velocity statistics over all frames.
+        VelocityStats result;
+        result.min = std::numeric_limits<float>::max();
+
+        for (const auto& frame : velocities) {
+            for (float vel : frame) {
+                if (vel > 0.0f) {
+                    result.avg += vel;
+                    result.max = std::max(result.max, vel);
+                    result.min = std::min(result.min, vel);
+                    ++result.count;
+                }
+            }
+        }
+
+        if (result.count == 0) {
+            result.min = 0.0f;
+            return result;
+        }
+
+        result.avg /= static_cast<float>(result.count);
+
+        float variance = 0.0f;
+        for (const auto& frame : velocities) {
+            for (float vel : frame) {
+                if (vel > 0.0f) {
+                    float diff = vel - result.avg;
+                    variance += diff * diff;
+                }
+            }
+        }
+        result.std_dev = std::sqrt(variance / static_cast<float>(result.count));
+
         return result;
     }
-
-    result.avg /= static_cast<float>(result.count);
-
-    float variance = 0.0f;
-    for (const auto& frame : velocities) {
-        for (float vel : frame) {
-            if (vel > 0.0f) {
-                float diff = vel - result.avg;
-                variance += diff * diff;
-            }
-        }
-    }
-    result.std_dev = std::sqrt(variance / static_cast<float>(result.count));
-
-    return result;
-}
 } // anonymous namespace
 
 template <typename T, typename E>
@@ -168,33 +160,27 @@ value_required(const std::optional<T>& option, const E& error)
 parse_calibration_settings(const toml::table& toml)
 {
     auto calib = CalibrationSettings {};
-    calib.pixel_to_real = value_required(
-        toml["calibration"]["pixel_to_real"].value<float>(),
+    calib.pixel_to_real = value_required(toml["calibration"]["pixel_to_real"].value<float>(),
         ConfigError("missing float value for calibration.pixel_to_real", toml.source()));
-    calib.partial_min_angle = value_required(
-        toml["calibration"]["partial_min_angle"].value<float>(),
-        ConfigError("missing float value for calibration.partial_min_angle", toml.source()));
-    calib.partial_max_angle = value_required(
-        toml["calibration"]["partial_max_angle"].value<float>(),
-        ConfigError("missing float value for calibration.partial_max_angle", toml.source()));
-    calib.final_min_angle = value_required(
-        toml["calibration"]["final_min_angle"].value<float>(),
+    calib.partial_min_angle
+        = value_required(toml["calibration"]["partial_min_angle"].value<float>(),
+            ConfigError("missing float value for calibration.partial_min_angle", toml.source()));
+    calib.partial_max_angle
+        = value_required(toml["calibration"]["partial_max_angle"].value<float>(),
+            ConfigError("missing float value for calibration.partial_max_angle", toml.source()));
+    calib.final_min_angle = value_required(toml["calibration"]["final_min_angle"].value<float>(),
         ConfigError("missing float value for calibration.final_min_angle", toml.source()));
-    calib.final_max_angle = value_required(
-        toml["calibration"]["final_max_angle"].value<float>(),
+    calib.final_max_angle = value_required(toml["calibration"]["final_max_angle"].value<float>(),
         ConfigError("missing float value for calibration.final_max_angle", toml.source()));
-    calib.final_min_distance = value_required(
-        toml["calibration"]["final_min_distance"].value<float>(),
-        ConfigError("missing float value for calibration.final_min_distance", toml.source()));
-    calib.max_features = value_required(
-        toml["calibration"]["max_features"].value<int>(),
+    calib.final_min_distance
+        = value_required(toml["calibration"]["final_min_distance"].value<float>(),
+            ConfigError("missing float value for calibration.final_min_distance", toml.source()));
+    calib.max_features = value_required(toml["calibration"]["max_features"].value<int>(),
         ConfigError("missing int value for calibration.max_features", toml.source()));
-    calib.region_step = value_required(
-        toml["calibration"]["region_step"].value<float>(),
+    calib.region_step = value_required(toml["calibration"]["region_step"].value<float>(),
         ConfigError("missing float value for calibration.region_step", toml.source()));
 
-    auto resopt = value_required(
-        toml["calibration"]["resolution"].value<std::string>(),
+    auto resopt = value_required(toml["calibration"]["resolution"].value<std::string>(),
         ConfigError("missing string value from calibration.resolution", toml.source()));
     if (resopt == "full_frame") {
         calib.resolution = FULL_FRAME_RESOLUTION;
@@ -208,8 +194,7 @@ parse_calibration_settings(const toml::table& toml)
             toml.source());
     }
 
-    auto detector = value_required(
-        toml["calibration"]["feature_detector"].value<std::string>(),
+    auto detector = value_required(toml["calibration"]["feature_detector"].value<std::string>(),
         ConfigError("missing string value from calibration.feature_detector", toml.source()));
     if (detector == "FAST") {
         calib.feature_detector = FeatureDetectorOption::FAST;
@@ -235,17 +220,13 @@ parse_lucas_kanade_settings(const toml::table& toml)
     auto lk = LucasKanadeSettings {};
     lk.radius = value_required(toml["lukas_kanade"]["radius"].value<int>(),
         ConfigError("missing int value for lukas_kanade.radius", toml.source()));
-    lk.max_level = value_required(
-        toml["lukas_kanade"]["max_level"].value<int>(),
+    lk.max_level = value_required(toml["lukas_kanade"]["max_level"].value<int>(),
         ConfigError("missing int value for lukas_kanade.max_level", toml.source()));
-    lk.max_count = value_required(
-        toml["lukas_kanade"]["max_count"].value<int>(),
+    lk.max_count = value_required(toml["lukas_kanade"]["max_count"].value<int>(),
         ConfigError("missing int value for lukas_kanade.max_count", toml.source()));
-    lk.epsilon = value_required(
-        toml["lukas_kanade"]["epsilon"].value<double>(),
+    lk.epsilon = value_required(toml["lukas_kanade"]["epsilon"].value<double>(),
         ConfigError("missing double value for lukas_kanade.epsilon", toml.source()));
-    lk.min_eig_threshold = value_required(
-        toml["lukas_kanade"]["min_eig_threshold"].value<double>(),
+    lk.min_eig_threshold = value_required(toml["lukas_kanade"]["min_eig_threshold"].value<double>(),
         ConfigError("missing double value for lukas_kanade.min_eig_threshold", toml.source()));
 
     return lk;
@@ -267,7 +248,8 @@ parse_video_settings(const toml::table& toml)
     return video;
 }
 
-Config Config::from_file(std::filesystem::path& path)
+Config
+Config::from_file(std::filesystem::path& path)
 {
     auto config = Config {};
 
@@ -283,7 +265,8 @@ Config Config::from_file(std::filesystem::path& path)
     return config;
 }
 
-Config Config::from_str(std::string_view string)
+Config
+Config::from_str(std::string_view string)
 {
     auto config = Config {};
 
@@ -304,21 +287,21 @@ FeatureDetector::FeatureDetector(const CalibrationSettings& calib, cv::Size fram
     int n_features = frame_size.width * frame_size.height;
 
     switch (calib.feature_detector) {
-        case FeatureDetectorOption::FAST:
-            m_detector = cv::FastFeatureDetector::create();
-            break;
-        case FeatureDetectorOption::ORB:
-            m_detector = cv::ORB::create(n_features);
-            break;
-        case FeatureDetectorOption::SIFT:
-            m_detector = cv::SIFT::create(n_features);
-            break;
-        case FeatureDetectorOption::GFTT:
-            m_detector = cv::GFTTDetector::create(n_features);
-            break;
-        default:
-            m_detector = cv::FastFeatureDetector::create();
-            break;
+    case FeatureDetectorOption::FAST:
+        m_detector = cv::FastFeatureDetector::create();
+        break;
+    case FeatureDetectorOption::ORB:
+        m_detector = cv::ORB::create(n_features);
+        break;
+    case FeatureDetectorOption::SIFT:
+        m_detector = cv::SIFT::create(n_features);
+        break;
+    case FeatureDetectorOption::GFTT:
+        m_detector = cv::GFTTDetector::create(n_features);
+        break;
+    default:
+        m_detector = cv::FastFeatureDetector::create();
+        break;
     }
 }
 
@@ -332,27 +315,18 @@ LucasKanade::LucasKanade(const LucasKanadeSettings& lk)
     : m_lk_settings(lk)
 {
     m_min_size = cv::Size(lk.radius * 2 + 1, lk.radius * 2 + 1);
-    m_termcrit =
-        cv::TermCriteria(cv::TermCriteria::COUNT | cv::TermCriteria::EPS, lk.max_count, lk.epsilon);
+    m_termcrit = cv::TermCriteria(
+        cv::TermCriteria::COUNT | cv::TermCriteria::EPS, lk.max_count, lk.epsilon);
 }
 
 void
-LucasKanade::track_points(cv::Mat previous_frame,
-                          cv::Mat current_frame,
-                          const std::vector<cv::KeyPoint>& current_kps)
+LucasKanade::track_points(
+    cv::Mat previous_frame, cv::Mat current_frame, const std::vector<cv::KeyPoint>& current_kps)
 {
     cv::KeyPoint::convert(current_kps, m_lk_prev);
-    cv::calcOpticalFlowPyrLK(previous_frame,
-                             current_frame,
-                             m_lk_prev,
-                             m_lk_next,
-                             m_status,
-                             m_err,
-                             m_min_size,
-                             m_lk_settings.max_level,
-                             m_termcrit,
-                             cv::OPTFLOW_LK_GET_MIN_EIGENVALS,
-                             m_lk_settings.min_eig_threshold);
+    cv::calcOpticalFlowPyrLK(previous_frame, current_frame, m_lk_prev, m_lk_next, m_status, m_err,
+        m_min_size, m_lk_settings.max_level, m_termcrit, cv::OPTFLOW_LK_GET_MIN_EIGENVALS,
+        m_lk_settings.min_eig_threshold);
 }
 
 const std::vector<unsigned char>&
@@ -370,7 +344,8 @@ LucasKanade::next_points() const
 SubRegion::SubRegion(const CalibrationSettings& calib, int width)
     : m_step(static_cast<int>(calib.region_step * calib.resolution))
 {
-    int n_regions = static_cast<int>(std::ceil(static_cast<float>(width) / static_cast<float>(m_step)));
+    int n_regions
+        = static_cast<int>(std::ceil(static_cast<float>(width) / static_cast<float>(m_step)));
     m_velocities.resize(n_regions);
     m_trajectories.resize(n_regions, 0);
 }
@@ -529,17 +504,11 @@ void
 OtvEngine::track_trajectory(size_t idx, float scaled_min_dist, float scaled_pixel_to_real)
 {
     // INVARIANT: Point has left tracking, check if the full trajectory is valid.
-    if (final_filter(m_keypoints.start[idx],
-                     m_keypoints.current[idx],
-                     scaled_min_dist,
-                     m_config.calibration.final_min_angle,
-                     m_config.calibration.final_max_angle)) {
+    if (final_filter(m_keypoints.start[idx], m_keypoints.current[idx], scaled_min_dist,
+            m_config.calibration.final_min_angle, m_config.calibration.final_max_angle)) {
         auto dt = static_cast<float>(m_frame_idx - m_keypoints.timestamp[idx]);
-        float vel = get_velocity(m_keypoints.start[idx],
-                                 m_keypoints.current[idx],
-                                 scaled_pixel_to_real,
-                                 dt,
-                                 m_effective_fps);
+        float vel = get_velocity(m_keypoints.start[idx], m_keypoints.current[idx],
+            scaled_pixel_to_real, dt, m_effective_fps);
 
         int region_start = static_cast<int>(m_keypoints.start[idx].pt.x) / m_sub_regions.step();
         int region_cur = static_cast<int>(m_keypoints.current[idx].pt.x) / m_sub_regions.step();
@@ -592,22 +561,23 @@ OtvEngine::process_frame(const cv::Mat& frame)
 
         // INVARIANT: Search distance scales inversely with resolution.
         //   - At half resolution, pixel displacements are halved so the window must be doubled.
-        float max_partial_dist =
-            static_cast<float>(m_config.lucas_kanade.max_level * (2 * m_config.lucas_kanade.radius + 1)) /
-            m_config.calibration.resolution;
-        float scaled_min_dist = m_config.calibration.final_min_distance * m_config.calibration.resolution;
-        float scaled_pixel_to_real = m_config.calibration.pixel_to_real / m_config.calibration.resolution;
+        float max_partial_dist = static_cast<float>(m_config.lucas_kanade.max_level
+                                     * (2 * m_config.lucas_kanade.radius + 1))
+            / m_config.calibration.resolution;
+        float scaled_min_dist
+            = m_config.calibration.final_min_distance * m_config.calibration.resolution;
+        float scaled_pixel_to_real
+            = m_config.calibration.pixel_to_real / m_config.calibration.resolution;
 
         if (m_record_snapshots)
             m_snapshots.resize(m_frame_idx + 1);
 
         size_t k = 0;
         for (size_t i = 0; i < m_keypoints.current.size(); ++i) {
-            bool tracked = lk_status[i] && partial_filter(m_keypoints.current[i],
-                                                          m_keypoints.predicted[i],
-                                                          m_config.calibration.partial_min_angle,
-                                                          m_config.calibration.partial_max_angle,
-                                                          max_partial_dist);
+            bool tracked = lk_status[i]
+                && partial_filter(m_keypoints.current[i], m_keypoints.predicted[i],
+                    m_config.calibration.partial_min_angle, m_config.calibration.partial_max_angle,
+                    max_partial_dist);
 
             if (!tracked) {
                 track_trajectory(i, scaled_min_dist, scaled_pixel_to_real);

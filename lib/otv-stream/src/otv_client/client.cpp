@@ -23,43 +23,42 @@ OtvClient::~OtvClient()
         m_thread.join();
 }
 
-void OtvClient::connect(const std::string&                      uri,
-                        std::function<void(const std::string&)> on_text,
-                        std::function<void(const std::string&)> on_binary,
-                        std::function<void()>                   on_close)
+void
+OtvClient::connect(const std::string& uri, std::function<void(const std::string&)> on_text,
+    std::function<void(const std::string&)> on_binary, std::function<void()> on_close)
 {
-    m_on_text   = std::move(on_text);
+    m_on_text = std::move(on_text);
     m_on_binary = std::move(on_binary);
-    m_on_close  = std::move(on_close);
+    m_on_close = std::move(on_close);
 
     websocketpp::lib::error_code ec;
     ws_client_t::connection_ptr con = m_endpoint.get_connection(uri, ec);
     if (ec) {
         fmt::println(stderr, "connect error: {}", ec.message());
-        if (m_on_close) m_on_close();
+        if (m_on_close)
+            m_on_close();
         return;
     }
 
     m_hdl = con->get_handle();
 
-    con->set_open_handler([this](websocketpp::connection_hdl) {
-        m_open.store(true);
-    });
+    con->set_open_handler([this](websocketpp::connection_hdl) { m_open.store(true); });
 
     con->set_close_handler([this](websocketpp::connection_hdl) {
         m_open.store(false);
-        if (m_on_close) m_on_close();
+        if (m_on_close)
+            m_on_close();
     });
 
     con->set_fail_handler([this](websocketpp::connection_hdl hdl) {
         auto c = m_endpoint.get_con_from_hdl(hdl);
         fmt::println(stderr, "connection failed: {}", c->get_ec().message());
         m_open.store(false);
-        if (m_on_close) m_on_close();
+        if (m_on_close)
+            m_on_close();
     });
 
-    con->set_message_handler([this](websocketpp::connection_hdl,
-                                    ws_client_t::message_ptr msg) {
+    con->set_message_handler([this](websocketpp::connection_hdl, ws_client_t::message_ptr msg) {
         const auto op = msg->get_opcode();
         if (op == websocketpp::frame::opcode::text && m_on_text)
             m_on_text(msg->get_payload());
@@ -70,7 +69,8 @@ void OtvClient::connect(const std::string&                      uri,
     m_endpoint.connect(con);
 }
 
-void OtvClient::close()
+void
+OtvClient::close()
 {
     if (!m_open.load())
         return;

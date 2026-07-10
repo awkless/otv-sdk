@@ -14,7 +14,8 @@
 
 #include "server.hpp"
 
-static cv::Mat apply_background_subtraction(const cv::Mat& src, cv::Mat& background)
+static cv::Mat
+apply_background_subtraction(const cv::Mat& src, cv::Mat& background)
 {
     cv::Mat src_float;
     src.convertTo(src_float, CV_32F);
@@ -30,7 +31,8 @@ static cv::Mat apply_background_subtraction(const cv::Mat& src, cv::Mat& backgro
     return diff;
 }
 
-static cv::Mat apply_clahe(const cv::Mat& src)
+static cv::Mat
+apply_clahe(const cv::Mat& src)
 {
     static const cv::Ptr<cv::CLAHE> clahe = cv::createCLAHE(2.0, cv::Size(8, 8));
     cv::Mat dst;
@@ -38,8 +40,8 @@ static cv::Mat apply_clahe(const cv::Mat& src)
     return dst;
 }
 
-static cv::Mat fill_background(
-    const cv::Mat& frame, const cv::Mat& colored, const cv::Mat& normalized)
+static cv::Mat
+fill_background(const cv::Mat& frame, const cv::Mat& colored, const cv::Mat& normalized)
 {
     cv::Mat out(frame.size(), CV_8UC3, cv::Scalar::all(0));
     for (int row = 0; row < frame.rows; ++row) {
@@ -52,28 +54,29 @@ static cv::Mat fill_background(
     return out;
 }
 
-static void put_labels(const std::vector<std::string>& labels, cv::Mat& frame)
+static void
+put_labels(const std::vector<std::string>& labels, cv::Mat& frame)
 {
-    static constexpr double k_font_scale   = 0.5;
-    static constexpr int    k_start_y      = 20;
-    static constexpr int    k_line_height  = 20;
+    static constexpr double k_font_scale = 0.5;
+    static constexpr int k_start_y = 20;
+    static constexpr int k_line_height = 20;
 
-    const int    fontface  = cv::FONT_HERSHEY_SIMPLEX;
-    const int    thickness = 1;
+    const int fontface = cv::FONT_HERSHEY_SIMPLEX;
+    const int thickness = 1;
 
     for (int i = 0; i < static_cast<int>(labels.size()); ++i) {
         cv::Point pt(0, k_start_y + i * k_line_height);
         int baseline = 0;
         cv::Size text = cv::getTextSize(labels[i], fontface, k_font_scale, thickness, &baseline);
-        cv::rectangle(frame, pt + cv::Point(0, baseline),
-                      pt + cv::Point(text.width, -text.height),
-                      cv::Scalar::all(0), cv::FILLED);
-        cv::putText(frame, labels[i], pt, fontface, k_font_scale,
-                    cv::Scalar::all(255), thickness, cv::LINE_8);
+        cv::rectangle(frame, pt + cv::Point(0, baseline), pt + cv::Point(text.width, -text.height),
+            cv::Scalar::all(0), cv::FILLED);
+        cv::putText(frame, labels[i], pt, fontface, k_font_scale, cv::Scalar::all(255), thickness,
+            cv::LINE_8);
     }
 }
 
-void RequestQueue::on_request_completed(libcamera::Request* request)
+void
+RequestQueue::on_request_completed(libcamera::Request* request)
 {
     if (request->status() == libcamera::Request::RequestCancelled)
         return;
@@ -86,7 +89,8 @@ void RequestQueue::on_request_completed(libcamera::Request* request)
     pending_cv.notify_one();
 }
 
-libcamera::Request* RequestQueue::dequeue_request()
+libcamera::Request*
+RequestQueue::dequeue_request()
 {
     std::unique_lock lock(pending_mutex);
     pending_cv.wait_for(lock, std::chrono::milliseconds(500), [this] { return !pending.empty(); });
@@ -121,7 +125,8 @@ Rpi4BCamera::~Rpi4BCamera()
     m_cam_manager->stop();
 }
 
-void Rpi4BCamera::open_and_acquire()
+void
+Rpi4BCamera::open_and_acquire()
 {
     m_cam_manager = std::make_unique<libcamera::CameraManager>();
     if (m_cam_manager->start()) {
@@ -145,7 +150,8 @@ void Rpi4BCamera::open_and_acquire()
     spdlog::info("acquired camera: {}", m_camera->id());
 }
 
-void Rpi4BCamera::configure_stream(const otv_sdk::Config& config)
+void
+Rpi4BCamera::configure_stream(const otv_sdk::Config& config)
 {
     m_cam_config = m_camera->generateConfiguration({ libcamera::StreamRole::Viewfinder });
     if (!m_cam_config) {
@@ -184,7 +190,8 @@ void Rpi4BCamera::configure_stream(const otv_sdk::Config& config)
         m_stream_cfg.size.height, config.video.fps, m_stream_cfg.pixelFormat.toString());
 }
 
-void Rpi4BCamera::setup_request_capture()
+void
+Rpi4BCamera::setup_request_capture()
 {
     m_allocator = std::make_unique<libcamera::FrameBufferAllocator>(m_camera);
     if (m_allocator->allocate(m_stream) < 0) {
@@ -215,14 +222,15 @@ void Rpi4BCamera::setup_request_capture()
         this, [this](libcamera::Request* req) { m_queue.on_request_completed(req); });
 }
 
-void Rpi4BCamera::start()
+void
+Rpi4BCamera::start()
 {
     // Clamp frame duration to exactly 1/fps seconds so auto-exposure cannot
     // drop the frame rate below the configured value in dim conditions.
     const int64_t frame_duration_us = 1'000'000 / m_fps;
     libcamera::ControlList controls;
     controls.set(libcamera::controls::FrameDurationLimits,
-                 libcamera::Span<const int64_t, 2>({ frame_duration_us, frame_duration_us }));
+        libcamera::Span<const int64_t, 2>({ frame_duration_us, frame_duration_us }));
 
     if (m_camera->start(&controls)) {
         throw Rpi4BCameraError("failed to start camera");
@@ -236,19 +244,37 @@ void Rpi4BCamera::start()
         }
     }
 
-    spdlog::info("camera capture started at {} fps (frame_duration={}µs)", m_fps, frame_duration_us);
+    spdlog::info(
+        "camera capture started at {} fps (frame_duration={}µs)", m_fps, frame_duration_us);
 }
 
-void Rpi4BCamera::stop()
+void
+Rpi4BCamera::stop()
 {
     spdlog::info("camera capture stopped");
     m_camera->stop();
 }
 
-const libcamera::StreamConfiguration& Rpi4BCamera::stream_cfg() const { return m_stream_cfg; }
-libcamera::Stream* Rpi4BCamera::stream() const { return m_stream; }
-libcamera::Request* Rpi4BCamera::dequeue_request() { return m_queue.dequeue_request(); }
-std::shared_ptr<libcamera::Camera> Rpi4BCamera::camera() { return m_camera; }
+const libcamera::StreamConfiguration&
+Rpi4BCamera::stream_cfg() const
+{
+    return m_stream_cfg;
+}
+libcamera::Stream*
+Rpi4BCamera::stream() const
+{
+    return m_stream;
+}
+libcamera::Request*
+Rpi4BCamera::dequeue_request()
+{
+    return m_queue.dequeue_request();
+}
+std::shared_ptr<libcamera::Camera>
+Rpi4BCamera::camera()
+{
+    return m_camera;
+}
 
 OtvWebSocketServer::OtvWebSocketServer(uint16_t port)
     : m_port(port)
@@ -267,21 +293,24 @@ OtvWebSocketServer::~OtvWebSocketServer()
     stop();
 }
 
-void OtvWebSocketServer::on_open(connection_hdl hdl)
+void
+OtvWebSocketServer::on_open(connection_hdl hdl)
 {
     std::lock_guard<std::mutex> lock(m_connections_mutex);
     m_connections.insert(hdl);
     spdlog::info("ws client connected (total: {})", m_connections.size());
 }
 
-void OtvWebSocketServer::on_close(connection_hdl hdl)
+void
+OtvWebSocketServer::on_close(connection_hdl hdl)
 {
     std::lock_guard<std::mutex> lock(m_connections_mutex);
     m_connections.erase(hdl);
     spdlog::info("ws client disconnected (total: {})", m_connections.size());
 }
 
-void OtvWebSocketServer::start()
+void
+OtvWebSocketServer::start()
 {
     m_server.listen(m_port);
     m_server.start_accept();
@@ -289,7 +318,8 @@ void OtvWebSocketServer::start()
     m_thread = std::thread([this]() { m_server.run(); });
 }
 
-void OtvWebSocketServer::stop()
+void
+OtvWebSocketServer::stop()
 {
     if (!m_thread.joinable())
         return;
@@ -308,7 +338,8 @@ void OtvWebSocketServer::stop()
     m_thread.join();
 }
 
-void OtvWebSocketServer::broadcast_text(const std::string& msg)
+void
+OtvWebSocketServer::broadcast_text(const std::string& msg)
 {
     std::lock_guard<std::mutex> lock(m_connections_mutex);
     for (auto& hdl : m_connections) {
@@ -320,7 +351,8 @@ void OtvWebSocketServer::broadcast_text(const std::string& msg)
     }
 }
 
-void OtvWebSocketServer::broadcast_binary(const std::vector<uchar>& data)
+void
+OtvWebSocketServer::broadcast_binary(const std::vector<uchar>& data)
 {
     std::lock_guard<std::mutex> lock(m_connections_mutex);
     for (auto& hdl : m_connections) {
@@ -333,8 +365,7 @@ void OtvWebSocketServer::broadcast_binary(const std::vector<uchar>& data)
 }
 
 OtvAnalyzer::OtvAnalyzer(const otv_sdk::Config& config, Rpi4BCamera& rpi_cam,
-                         OtvWebSocketServer& ws, OtvWebSocketServer* viz_ws,
-                         std::atomic<bool>& stop)
+    OtvWebSocketServer& ws, OtvWebSocketServer* viz_ws, std::atomic<bool>& stop)
     : m_engine(otv_sdk::OtvEngine(config))
     , m_config(config)
     , m_rpi_cam(rpi_cam)
@@ -348,12 +379,14 @@ OtvAnalyzer::OtvAnalyzer(const otv_sdk::Config& config, Rpi4BCamera& rpi_cam,
         m_engine.enable_snapshots();
 }
 
-void OtvAnalyzer::set_mask(const cv::Mat& mask)
+void
+OtvAnalyzer::set_mask(const cv::Mat& mask)
 {
     m_engine.set_mask(mask);
 }
 
-void OtvAnalyzer::run()
+void
+OtvAnalyzer::run()
 {
     const int jump = m_config.video.jump;
     int raw_frame = 0;
@@ -383,9 +416,8 @@ void OtvAnalyzer::run()
                     broadcast_viz_frame(scaled);
 
                 const otv_sdk::VelocityStats s = m_engine.stats();
-                m_ws.broadcast_text(fmt::format(
-                    "{{\"frame\":{},\"avg\":{:.4f},\"max\":{:.4f},"
-                    "\"min\":{:.4f},\"std_dev\":{:.4f},\"count\":{}}}",
+                m_ws.broadcast_text(fmt::format("{{\"frame\":{},\"avg\":{:.4f},\"max\":{:.4f},"
+                                                "\"min\":{:.4f},\"std_dev\":{:.4f},\"count\":{}}}",
                     fed_frame, s.avg, s.max, s.min, s.std_dev, s.count));
 
                 if (fed_frame % 30 == 0) {
@@ -408,7 +440,8 @@ void OtvAnalyzer::run()
     m_fed_frame = fed_frame;
 }
 
-void OtvAnalyzer::broadcast_viz_frame(const cv::Mat& gray)
+void
+OtvAnalyzer::broadcast_viz_frame(const cv::Mat& gray)
 {
     if (m_vel_img.empty())
         m_vel_img = cv::Mat(gray.size(), CV_32F, cv::Scalar(0));
@@ -420,11 +453,11 @@ void OtvAnalyzer::broadcast_viz_frame(const cv::Mat& gray)
         const auto& snap = snaps[i];
         const int already = m_drawn_counts[i];
         for (int j = already; j < static_cast<int>(snap.current.size()); ++j) {
-            cv::line(m_vel_img, snap.current[j].pt, snap.predicted[j].pt,
-                     snap.velocities[j], 1, cv::LINE_AA);
+            cv::line(m_vel_img, snap.current[j].pt, snap.predicted[j].pt, snap.velocities[j], 1,
+                cv::LINE_AA);
             const float v = snap.velocities[j];
             ++m_running_count;
-            m_running_sum    += v;
+            m_running_sum += v;
             m_running_sum_sq += v * v;
             m_running_max = std::max(m_running_max, v);
             m_running_min = std::min(m_running_min, v);
@@ -441,11 +474,11 @@ void OtvAnalyzer::broadcast_viz_frame(const cv::Mat& gray)
     cv::cvtColor(gray, bgr, cv::COLOR_GRAY2BGR);
     cv::Mat filled = fill_background(bgr, colored, normalized);
 
-    const float avg_disp = (m_running_count > 0)
-        ? m_running_sum / static_cast<float>(m_running_count) : 0.0f;
+    const float avg_disp
+        = (m_running_count > 0) ? m_running_sum / static_cast<float>(m_running_count) : 0.0f;
     const float variance = (m_running_count > 0)
-        ? std::max(0.0f, m_running_sum_sq / static_cast<float>(m_running_count)
-                         - avg_disp * avg_disp)
+        ? std::max(
+              0.0f, m_running_sum_sq / static_cast<float>(m_running_count) - avg_disp * avg_disp)
         : 0.0f;
     const float std_disp = std::sqrt(variance);
 
@@ -469,7 +502,8 @@ void OtvAnalyzer::broadcast_viz_frame(const cv::Mat& gray)
     m_viz_ws->broadcast_binary(jpeg_buf);
 }
 
-void OtvAnalyzer::log_results()
+void
+OtvAnalyzer::log_results()
 {
     const otv_sdk::VelocityStats s = m_engine.stats();
     spdlog::info("--- Final velocity statistics ({} frames processed) ---", m_fed_frame);
@@ -489,7 +523,8 @@ void OtvAnalyzer::log_results()
     }
 }
 
-cv::Mat OtvAnalyzer::buffer_to_gray(const libcamera::FrameBuffer* buffer) const
+cv::Mat
+OtvAnalyzer::buffer_to_gray(const libcamera::FrameBuffer* buffer) const
 {
     const auto& planes = buffer->planes();
     if (planes.empty())
@@ -531,7 +566,8 @@ cv::Mat OtvAnalyzer::buffer_to_gray(const libcamera::FrameBuffer* buffer) const
     return gray;
 }
 
-cv::Mat OtvAnalyzer::scale_frame(const cv::Mat& src) const
+cv::Mat
+OtvAnalyzer::scale_frame(const cv::Mat& src) const
 {
     const float res = m_config.calibration.resolution;
     if (res >= 1.0f - 1e-4f)
@@ -544,8 +580,8 @@ cv::Mat OtvAnalyzer::scale_frame(const cv::Mat& src) const
     return dst;
 }
 
-CalibrationStreamer::CalibrationStreamer(Rpi4BCamera& cam, OtvWebSocketServer& ws,
-                                        std::atomic<bool>& stop, cv::Mat mask)
+CalibrationStreamer::CalibrationStreamer(
+    Rpi4BCamera& cam, OtvWebSocketServer& ws, std::atomic<bool>& stop, cv::Mat mask)
     : m_cam(cam)
     , m_ws(ws)
     , m_stop(stop)
@@ -558,20 +594,20 @@ CalibrationStreamer::CalibrationStreamer(Rpi4BCamera& cam, OtvWebSocketServer& w
     }
 }
 
-void CalibrationStreamer::run()
+void
+CalibrationStreamer::run()
 {
     m_cam.start();
 
-    const int width  = static_cast<int>(m_cam.stream_cfg().size.width);
+    const int width = static_cast<int>(m_cam.stream_cfg().size.width);
     const int height = static_cast<int>(m_cam.stream_cfg().size.height);
     const int stride = static_cast<int>(m_cam.stream_cfg().stride);
     const auto pixel_fmt = m_cam.stream_cfg().pixelFormat;
 
-    spdlog::info("calibration mode: {}x{} stride={} format={}",
-                 width, height, stride, pixel_fmt.toString());
+    spdlog::info(
+        "calibration mode: {}x{} stride={} format={}", width, height, stride, pixel_fmt.toString());
 
-    const std::string metadata =
-        fmt::format("{{\"width\":{},\"height\":{}}}", width, height);
+    const std::string metadata = fmt::format("{{\"width\":{},\"height\":{}}}", width, height);
     std::vector<uchar> y_buf(static_cast<std::size_t>(width) * height);
     std::vector<uchar> jpeg_buf;
 
@@ -585,8 +621,8 @@ void CalibrationStreamer::run()
 
         if (!planes.empty()) {
             const auto& plane0 = planes[0];
-            void* mapped = ::mmap(nullptr, plane0.length, PROT_READ, MAP_SHARED,
-                                  plane0.fd.get(), plane0.offset);
+            void* mapped = ::mmap(
+                nullptr, plane0.length, PROT_READ, MAP_SHARED, plane0.fd.get(), plane0.offset);
             if (mapped != MAP_FAILED) {
                 const auto* base = static_cast<const uint8_t*>(mapped);
 
@@ -611,7 +647,7 @@ void CalibrationStreamer::run()
                         mask_scaled = m_mask;
                     processed.setTo(0, mask_scaled == 0);
                 }
-                cv::imencode(".jpg", processed, jpeg_buf, {cv::IMWRITE_JPEG_QUALITY, 60});
+                cv::imencode(".jpg", processed, jpeg_buf, { cv::IMWRITE_JPEG_QUALITY, 60 });
                 m_ws.broadcast_text(metadata);
                 m_ws.broadcast_binary(jpeg_buf);
                 ::munmap(mapped, plane0.length);

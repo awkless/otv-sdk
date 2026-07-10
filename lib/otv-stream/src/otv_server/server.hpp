@@ -13,9 +13,9 @@
 #include <queue>
 #include <set>
 #include <stdexcept>
+#include <sys/mman.h>
 #include <thread>
 #include <vector>
-#include <sys/mman.h>
 
 #include <websocketpp/config/asio_no_tls.hpp>
 #include <websocketpp/server.hpp>
@@ -31,8 +31,10 @@ struct RequestQueue {
     std::mutex pending_mutex;
     std::condition_variable pending_cv;
 
-    void on_request_completed(libcamera::Request* request);
-    libcamera::Request* dequeue_request();
+    void
+    on_request_completed(libcamera::Request* request);
+    libcamera::Request*
+    dequeue_request();
 };
 
 class Rpi4BCamera final {
@@ -40,17 +42,26 @@ public:
     Rpi4BCamera(const otv_sdk::Config& config, RequestQueue& queue);
     ~Rpi4BCamera() noexcept;
 
-    void start();
-    void stop();
-    const libcamera::StreamConfiguration& stream_cfg() const;
-    libcamera::Stream* stream() const;
-    libcamera::Request* dequeue_request();
-    std::shared_ptr<libcamera::Camera> camera();
+    void
+    start();
+    void
+    stop();
+    const libcamera::StreamConfiguration&
+    stream_cfg() const;
+    libcamera::Stream*
+    stream() const;
+    libcamera::Request*
+    dequeue_request();
+    std::shared_ptr<libcamera::Camera>
+    camera();
 
 private:
-    void open_and_acquire();
-    void configure_stream(const otv_sdk::Config& config);
-    void setup_request_capture();
+    void
+    open_and_acquire();
+    void
+    configure_stream(const otv_sdk::Config& config);
+    void
+    setup_request_capture();
 
     std::unique_ptr<libcamera::CameraManager> m_cam_manager;
     std::shared_ptr<libcamera::Camera> m_camera;
@@ -68,19 +79,25 @@ public:
     explicit OtvWebSocketServer(uint16_t port);
     ~OtvWebSocketServer();
 
-    void start();
-    void stop();
+    void
+    start();
+    void
+    stop();
 
     // Thread-safe: may be called from any thread while start() is running.
-    void broadcast_text(const std::string& msg);
-    void broadcast_binary(const std::vector<uchar>& data);
+    void
+    broadcast_text(const std::string& msg);
+    void
+    broadcast_binary(const std::vector<uchar>& data);
 
 private:
     using ws_server_t = websocketpp::server<websocketpp::config::asio>;
     using connection_hdl = websocketpp::connection_hdl;
 
-    void on_open(connection_hdl hdl);
-    void on_close(connection_hdl hdl);
+    void
+    on_open(connection_hdl hdl);
+    void
+    on_close(connection_hdl hdl);
 
     ws_server_t m_server;
     std::set<connection_hdl, std::owner_less<connection_hdl>> m_connections;
@@ -91,40 +108,47 @@ private:
 
 class OtvAnalyzer final {
 public:
-    OtvAnalyzer(const otv_sdk::Config& config, Rpi4BCamera& rpi_cam,
-                OtvWebSocketServer& ws, OtvWebSocketServer* viz_ws, std::atomic<bool>& stop);
+    OtvAnalyzer(const otv_sdk::Config& config, Rpi4BCamera& rpi_cam, OtvWebSocketServer& ws,
+        OtvWebSocketServer* viz_ws, std::atomic<bool>& stop);
 
-    void set_mask(const cv::Mat& mask);
-    void run();
-    void log_results();
+    void
+    set_mask(const cv::Mat& mask);
+    void
+    run();
+    void
+    log_results();
 
 private:
-    cv::Mat buffer_to_gray(const libcamera::FrameBuffer* buffer) const;
-    cv::Mat scale_frame(const cv::Mat& src) const;
-    void broadcast_viz_frame(const cv::Mat& gray);
+    cv::Mat
+    buffer_to_gray(const libcamera::FrameBuffer* buffer) const;
+    cv::Mat
+    scale_frame(const cv::Mat& src) const;
+    void
+    broadcast_viz_frame(const cv::Mat& gray);
 
-    otv_sdk::OtvEngine  m_engine;
+    otv_sdk::OtvEngine m_engine;
     const otv_sdk::Config& m_config;
-    Rpi4BCamera&        m_rpi_cam;
+    Rpi4BCamera& m_rpi_cam;
     OtvWebSocketServer& m_ws;
     OtvWebSocketServer* m_viz_ws;
-    std::atomic<bool>&  m_stop;
-    int                 m_fed_frame;
+    std::atomic<bool>& m_stop;
+    int m_fed_frame;
 
-    cv::Mat              m_vel_img;
-    std::vector<int>     m_drawn_counts;
-    float   m_running_sum    = 0.0f;
-    float   m_running_sum_sq = 0.0f;
-    float   m_running_max    = 0.0f;
-    float   m_running_min    = 0.0f;
-    int     m_running_count  = 0;
+    cv::Mat m_vel_img;
+    std::vector<int> m_drawn_counts;
+    float m_running_sum = 0.0f;
+    float m_running_sum_sq = 0.0f;
+    float m_running_max = 0.0f;
+    float m_running_min = 0.0f;
+    int m_running_count = 0;
 };
 
 class CalibrationStreamer final {
 public:
-    CalibrationStreamer(Rpi4BCamera& cam, OtvWebSocketServer& ws,
-                        std::atomic<bool>& stop, cv::Mat mask = {});
-    void run();
+    CalibrationStreamer(
+        Rpi4BCamera& cam, OtvWebSocketServer& ws, std::atomic<bool>& stop, cv::Mat mask = {});
+    void
+    run();
 
 private:
     Rpi4BCamera& m_cam;
