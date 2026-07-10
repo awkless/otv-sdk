@@ -283,6 +283,13 @@ public:
     void
     process_frame(const cv::Mat& frame);
 
+    /// @brief Corrected frame (background-subtracted + CLAHE) used for tracking in the
+    /// most recent process_frame() call. Intended as the display background for live
+    /// visualization, since the raw input frame is often too dark/low-contrast on its own.
+    [[nodiscard]]
+    const cv::Mat&
+    corrected_frame() const;
+
     /// @brief Enable per-frame snapshot recording for visualization output.
     ///
     /// Must be called before any process_frame() calls. When enabled,

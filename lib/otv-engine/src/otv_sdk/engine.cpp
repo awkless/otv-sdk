@@ -440,6 +440,12 @@ OtvEngine::snapshots() const
     return m_snapshots;
 }
 
+const cv::Mat&
+OtvEngine::corrected_frame() const
+{
+    return m_previous_frame;
+}
+
 void
 OtvEngine::set_mask(const cv::Mat& mask)
 {
@@ -520,8 +526,10 @@ OtvEngine::track_trajectory(size_t idx, float scaled_min_dist, float scaled_pixe
 
         m_frame_velocities.back().push_back(vel);
 
-        // INVARIANT: Retroactively mark all recorded segments of this trajectory with
-        // the finalized velocity so the visualization shows the full path in color.
+        // INVARIANT: Only push segments into m_snapshots once the whole trajectory is
+        // known to be valid — final_filter cannot be evaluated until the trajectory
+        // terminates, so drawing segments before that point would render paths for
+        // noise/jitter that never amounts to real motion (e.g. still water).
         if (m_record_snapshots) {
             for (const auto& entry : m_point_histories[idx]) {
                 m_snapshots[entry.frame_idx].current.push_back(entry.current);

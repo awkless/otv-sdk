@@ -471,7 +471,7 @@ OtvAnalyzer::broadcast_viz_frame(const cv::Mat& gray)
     cv::applyColorMap(normalized, colored, cv::COLORMAP_JET);
 
     cv::Mat bgr;
-    cv::cvtColor(gray, bgr, cv::COLOR_GRAY2BGR);
+    cv::cvtColor(m_engine.corrected_frame(), bgr, cv::COLOR_GRAY2BGR);
     cv::Mat filled = fill_background(bgr, colored, normalized);
 
     const float avg_disp
