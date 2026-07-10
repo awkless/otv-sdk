@@ -437,7 +437,13 @@ void
 OtvEngine::set_mask(const cv::Mat& mask)
 {
     constexpr int bit_value = 255;
-    m_mask = mask / bit_value;
+
+    if (mask.channels() > 1)
+        cv::cvtColor(mask, m_mask, cv::COLOR_BGR2GRAY);
+    else
+        m_mask = mask;
+
+    m_mask = m_mask / bit_value;
     cv::Size target(m_config.video.width, m_config.video.height);
 
     if (m_mask.size() != target)

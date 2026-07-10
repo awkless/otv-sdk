@@ -305,7 +305,7 @@ static void run_otv_engine(CliOptions options)
         engine.enable_snapshots();
 
     if (!options.mask_path.empty()) {
-        cv::Mat mask = cv::imread(options.mask_path.string(), cv::IMREAD_UNCHANGED);
+        cv::Mat mask = cv::imread(options.mask_path.string(), cv::IMREAD_GRAYSCALE);
         if (mask.empty()) {
             fmt::println(stderr, "Error: could not load mask '{}'", options.mask_path.string());
             std::exit(1);
