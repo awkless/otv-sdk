@@ -270,6 +270,10 @@ public:
     void set_mask(const cv::Mat& mask);
 
     /// @brief Process the next frame in sequence.
+    ///
+    /// Internally converts frame to grayscale (if needed), suppresses static
+    /// background via a running average, and applies CLAHE contrast
+    /// enhancement before feature detection and Lucas-Kanade tracking.
     void process_frame(const cv::Mat& frame);
 
     /// @brief Enable per-frame snapshot recording for visualization output.
@@ -311,6 +315,7 @@ private:
     SubRegion m_sub_regions;
     KeyPoints m_keypoints;
     cv::Mat m_mask;
+    cv::Mat m_background;
     cv::Mat m_previous_frame;
     std::vector<std::vector<float>> m_frame_velocities;
     int m_frame_idx;

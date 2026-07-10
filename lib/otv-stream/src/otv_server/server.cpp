@@ -375,7 +375,7 @@ void OtvAnalyzer::run()
             if (gray.empty()) {
                 spdlog::warn("Frame {} produced an empty Mat — skipping", raw_frame - 1);
             } else {
-                cv::Mat scaled = scale_frame(apply_clahe(gray));
+                cv::Mat scaled = scale_frame(gray);
                 m_engine.process_frame(scaled);
                 ++fed_frame;
 

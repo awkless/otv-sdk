@@ -45,6 +45,38 @@ get_velocity(const cv::KeyPoint& kp1,
     return magnitude * pixel_to_real * fps / time_delta;
 }
 
+cv::Mat
+apply_background_subtraction(const cv::Mat& src, cv::Mat& background)
+{
+    constexpr double k_accumulate_weight = 0.01;
+
+    cv::Mat src_float;
+    src.convertTo(src_float, CV_32F);
+
+    if (background.empty())
+        background = src_float.clone();
+
+    cv::accumulateWeighted(src_float, background, k_accumulate_weight);
+
+    cv::Mat diff;
+    cv::absdiff(src_float, background, diff);
+    diff.convertTo(diff, CV_8U);
+    return diff;
+}
+
+cv::Mat
+apply_clahe(const cv::Mat& src)
+{
+    constexpr double k_clahe_clip_limit = 2.0;
+    constexpr int k_clahe_tile_size = 8;
+
+    static const cv::Ptr<cv::CLAHE> clahe
+        = cv::createCLAHE(k_clahe_clip_limit, cv::Size(k_clahe_tile_size, k_clahe_tile_size));
+    cv::Mat dst;
+    clahe->apply(src, dst);
+    return dst;
+}
+
 bool
 angle_in_range(const cv::KeyPoint& kp1, const cv::KeyPoint& kp2, float min_angle, float max_angle)
 {
@@ -534,7 +566,15 @@ OtvEngine::track_trajectory(size_t idx, float scaled_min_dist, float scaled_pixe
 void
 OtvEngine::process_frame(const cv::Mat& frame)
 {
-    cv::Mat current = frame.clone();
+    cv::Mat gray;
+    if (frame.channels() > 1)
+        cv::cvtColor(frame, gray, cv::COLOR_BGR2GRAY);
+    else
+        gray = frame;
+
+    // INVARIANT: Suppress static background and boost local contrast before tracking so
+    // Lucas-Kanade sees stable, high-contrast texture rather than raw color/lighting noise.
+    cv::Mat current = apply_clahe(apply_background_subtraction(gray, m_background));
 
     // Detect on the unmodified frame using the mask natively so the hard
     // zero-boundary does not create spurious corners for the feature detector.
