@@ -291,9 +291,9 @@ FeatureDetector::FeatureDetector(const CalibrationSettings& calib, cv::Size fram
 }
 
 void
-FeatureDetector::detect(cv::InputArray image, KeyPoints& keypoints)
+FeatureDetector::detect(cv::InputArray image, KeyPoints& keypoints, cv::InputArray mask)
 {
-    m_detector->detect(image, keypoints.detected);
+    m_detector->detect(image, keypoints.detected, mask);
 }
 
 LucasKanade::LucasKanade(const LucasKanadeSettings& lk)
@@ -530,11 +530,15 @@ OtvEngine::process_frame(const cv::Mat& frame)
 {
     cv::Mat current = frame.clone();
 
+    // Detect on the unmodified frame using the mask natively so the hard
+    // zero-boundary does not create spurious corners for the feature detector.
+    m_detector.detect(current, m_keypoints, m_mask);
+    admit_new_points();
+
+    // Zero pixels outside the mask after detection so LK optical flow cannot
+    // follow gradients that cross the mask boundary.
     if (!m_mask.empty())
         apply_mask(current);
-
-    m_detector.detect(current, m_keypoints);
-    admit_new_points();
 
     if (m_frame_idx > 0 && !m_keypoints.current.empty()) {
         determine_optical_flow(current);

@@ -172,7 +172,7 @@ public:
     explicit FeatureDetector(const CalibrationSettings& calib, cv::Size frame_size);
 
     /// @brief Detect keypoints in image, writing results to keypoints.detected.
-    void detect(cv::InputArray image, KeyPoints& keypoints);
+    void detect(cv::InputArray image, KeyPoints& keypoints, cv::InputArray mask = cv::noArray());
 
 private:
     cv::Ptr<cv::Feature2D> m_detector;

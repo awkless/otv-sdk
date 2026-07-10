@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: 2026 Huidae Cho <hcho@nmsu.edu>
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-cmake_minimum_required(VERSION 3.26)
+cmake_minimum_required(VERSION 3.25)
 
 project(
     "otv-sdk"
@@ -49,6 +49,20 @@ CPMAddPackage(
     GITHUB_REPOSITORY gabime/spdlog
     VERSION 1.15.0
     OPTIONS "SPDLOG_FMT_EXTERNAL ON"
+)
+
+CPMAddPackage(
+    NAME websocketpp
+    GITHUB_REPOSITORY zaphoyd/websocketpp
+    GIT_TAG 0.8.2
+    DOWNLOAD_ONLY TRUE
+)
+
+CPMAddPackage(
+    NAME asio
+    GITHUB_REPOSITORY chriskohlhoff/asio
+    GIT_TAG asio-1-28-0
+    DOWNLOAD_ONLY TRUE
 )
 
 if(ENABLE_TESTS)
