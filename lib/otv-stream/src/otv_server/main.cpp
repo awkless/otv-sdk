@@ -22,7 +22,7 @@
 struct CliOptions {
     uint16_t port;
     uint16_t viz_port = 0;
-    bool     has_viz  = false;
+    bool has_viz = false;
     std::filesystem::path config_path;
     std::filesystem::path mask_path;
     bool calibrate = false;
@@ -32,17 +32,16 @@ static CliOptions
 parse_cli(int argc, char** argv)
 {
     cxxopts::Options opts("otv-server", "OTV libcamera capture + analysis server");
-    opts.add_options()
-        ("c,calibrate", "Enter calibration mode (streams raw camera frames; disables OTV analysis)")
-        ("m,mask", "Apply mask image during OTV analysis (0=exclude, 255=include)",
-         cxxopts::value<std::string>())
-        ("viz-port", "WebSocket port for velocity visualization frames (analysis mode only)",
-         cxxopts::value<uint16_t>())
-        ("h,help", "Print help message")
-        ("port", "WebSocket port number", cxxopts::value<uint16_t>())
-        ("config", "Path to OTV TOML configuration file", cxxopts::value<std::string>());
+    opts.add_options()("c,calibrate",
+        "Enter calibration mode (streams raw camera frames; disables OTV analysis)")("m,mask",
+        "Apply mask image during OTV analysis (0=exclude, 255=include)",
+        cxxopts::value<std::string>())("viz-port",
+        "WebSocket port for velocity visualization frames (analysis mode only)",
+        cxxopts::value<uint16_t>())("h,help", "Print help message")(
+        "port", "WebSocket port number", cxxopts::value<uint16_t>())(
+        "config", "Path to OTV TOML configuration file", cxxopts::value<std::string>());
 
-    opts.parse_positional({"port", "config"});
+    opts.parse_positional({ "port", "config" });
     opts.positional_help("<port> <config_file>");
 
     try {
@@ -69,7 +68,7 @@ parse_cli(int argc, char** argv)
 
         if (args.count("viz-port")) {
             result.viz_port = args["viz-port"].as<uint16_t>();
-            result.has_viz  = true;
+            result.has_viz = true;
         }
 
         return result;
@@ -79,7 +78,8 @@ parse_cli(int argc, char** argv)
     }
 }
 
-int main(int argc, char** argv)
+int
+main(int argc, char** argv)
 {
     try {
         spdlog::stdout_color_mt("console");
@@ -104,7 +104,8 @@ int main(int argc, char** argv)
             mask = cv::imread(cli.mask_path.string(), cv::IMREAD_GRAYSCALE);
             if (mask.empty()) {
                 spdlog::error("could not load mask '{}'", cli.mask_path.string());
-                if (viz_ws) viz_ws->stop();
+                if (viz_ws)
+                    viz_ws->stop();
                 ws_server.stop();
                 return 1;
             }
@@ -114,9 +115,9 @@ int main(int argc, char** argv)
         RequestQueue queue;
         Rpi4BCamera rpi_cam(otv_config, queue);
 
-        std::atomic<bool> stop_flag{false};
+        std::atomic<bool> stop_flag { false };
         static std::atomic<bool>* stop_ptr = &stop_flag;
-        std::signal(SIGINT,  [](int) { stop_ptr->store(true); });
+        std::signal(SIGINT, [](int) { stop_ptr->store(true); });
         std::signal(SIGTERM, [](int) { stop_ptr->store(true); });
 
         if (cli.calibrate) {
@@ -131,7 +132,8 @@ int main(int argc, char** argv)
             analyzer.log_results();
         }
 
-        if (viz_ws) viz_ws->stop();
+        if (viz_ws)
+            viz_ws->stop();
         ws_server.stop();
         return 0;
     } catch (const spdlog::spdlog_ex& err) {

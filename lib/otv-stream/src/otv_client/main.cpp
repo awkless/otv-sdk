@@ -21,25 +21,22 @@
 
 struct CliOptions {
     std::string host;
-    uint16_t    port;
-    uint16_t    viz_port  = 0;
-    bool        calibrate = false;
-    bool        has_viz   = false;
+    uint16_t port;
+    uint16_t viz_port = 0;
+    bool calibrate = false;
+    bool has_viz = false;
 };
 
 static CliOptions
 parse_cli(int argc, char** argv)
 {
     cxxopts::Options opts("otv-client", "OTV WebSocket client");
-    opts.add_options()
-        ("c,calibrate", "Enter calibrate mode (display raw camera frames)")
-        ("viz-port", "Port for velocity visualization stream (result mode only)",
-         cxxopts::value<uint16_t>())
-        ("h,help",      "Display help message")
-        ("host", "Server IP address",    cxxopts::value<std::string>())
-        ("port", "WebSocket port number", cxxopts::value<uint16_t>());
+    opts.add_options()("c,calibrate", "Enter calibrate mode (display raw camera frames)")(
+        "viz-port", "Port for velocity visualization stream (result mode only)",
+        cxxopts::value<uint16_t>())("h,help", "Display help message")("host", "Server IP address",
+        cxxopts::value<std::string>())("port", "WebSocket port number", cxxopts::value<uint16_t>());
 
-    opts.parse_positional({"host", "port"});
+    opts.parse_positional({ "host", "port" });
     opts.positional_help("<host> <port>");
 
     try {
@@ -57,12 +54,12 @@ parse_cli(int argc, char** argv)
         }
 
         CliOptions result;
-        result.host      = args["host"].as<std::string>();
-        result.port      = args["port"].as<uint16_t>();
+        result.host = args["host"].as<std::string>();
+        result.port = args["port"].as<uint16_t>();
         result.calibrate = args.count("calibrate") > 0;
         if (args.count("viz-port")) {
             result.viz_port = args["viz-port"].as<uint16_t>();
-            result.has_viz  = true;
+            result.has_viz = true;
         }
         return result;
     } catch (const cxxopts::exceptions::exception& e) {
@@ -74,30 +71,32 @@ parse_cli(int argc, char** argv)
 static void
 print_stats(const std::string& payload)
 {
-    int   frame = 0, count = 0;
+    int frame = 0, count = 0;
     float avg = 0.0f, vmax = 0.0f, vmin = 0.0f, std_dev = 0.0f;
 
     if (std::sscanf(payload.c_str(),
-            "{\"frame\":%d,\"avg\":%f,\"max\":%f,\"min\":%f,\"std_dev\":%f,\"count\":%d}",
-            &frame, &avg, &vmax, &vmin, &std_dev, &count) != 6) {
+            "{\"frame\":%d,\"avg\":%f,\"max\":%f,\"min\":%f,\"std_dev\":%f,\"count\":%d}", &frame,
+            &avg, &vmax, &vmin, &std_dev, &count)
+        != 6) {
         fmt::println(stderr, "\nmalformed message: {}", payload);
         return;
     }
 
     fmt::print("\r[frame {:6d}]  avg={:.4f} m/s  max={:.4f} m/s  "
                "min={:.4f} m/s  std_dev={:.4f} m/s  n={:5d}     ",
-               frame, avg, vmax, vmin, std_dev, count);
+        frame, avg, vmax, vmin, std_dev, count);
     std::fflush(stdout);
 }
 
-int main(int argc, char** argv)
+int
+main(int argc, char** argv)
 {
     auto cli = parse_cli(argc, argv);
     const std::string uri = fmt::format("ws://{}:{}", cli.host, cli.port);
 
-    std::atomic<bool> stop_flag{false};
+    std::atomic<bool> stop_flag { false };
     static std::atomic<bool>* stop_ptr = &stop_flag;
-    std::signal(SIGINT,  [](int) { stop_ptr->store(true); });
+    std::signal(SIGINT, [](int) { stop_ptr->store(true); });
     std::signal(SIGTERM, [](int) { stop_ptr->store(true); });
 
     if (cli.calibrate) {
@@ -105,8 +104,8 @@ int main(int argc, char** argv)
         SharedFrame shared;
         OtvClient client;
 
-        client.connect(uri,
-            nullptr,
+        client.connect(
+            uri, nullptr,
             [&shared](const std::string& payload) {
                 std::vector<uchar> jpeg(payload.begin(), payload.end());
                 cv::Mat frame = cv::imdecode(jpeg, cv::IMREAD_GRAYSCALE);
@@ -141,9 +140,8 @@ int main(int argc, char** argv)
         OtvClient client;
 
         fmt::println("OTV result mode — connecting to {}", uri);
-        client.connect(uri,
-            [](const std::string& payload) { print_stats(payload); },
-            nullptr,
+        client.connect(
+            uri, [](const std::string& payload) { print_stats(payload); }, nullptr,
             [&stop_flag]() {
                 fmt::println("\nserver closed connection");
                 stop_flag.store(true);
@@ -157,8 +155,8 @@ int main(int argc, char** argv)
 
             fmt::println("viz mode — connecting to {}", viz_uri);
             fmt::println("press 'q' or ESC to quit");
-            viz_client.connect(viz_uri,
-                nullptr,
+            viz_client.connect(
+                viz_uri, nullptr,
                 [&shared](const std::string& payload) {
                     std::vector<uchar> jpeg(payload.begin(), payload.end());
                     cv::Mat frame = cv::imdecode(jpeg, cv::IMREAD_COLOR);
