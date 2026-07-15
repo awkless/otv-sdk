@@ -32,10 +32,10 @@ jobs:
         run: sudo apt install libopencv-dev
 
       - name: Configure CMake
-        run: cmake --preset debug
+        run: cmake --preset host-debug
 
       - name: Build
-        run: cmake --build --preset debug
+        run: cmake --build --preset host-debug
 
       - name: Run Tests
-        run: ctest --test-dir build/debug
+        run: ctest --test-dir build/host-debug
