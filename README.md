@@ -21,6 +21,8 @@ The following is a list of all current submodules apart of the active codebase:
 
 - `otv-engine` [library] - OTV analysis engine API.
 - `otv-analyze` [binary] - OTV analysis driver over video files.
+- `otv-stream` [binary] - OTV analysis driver using a server-client framework
+   on Rpi 4B hardware.
 
 ## Install
 
@@ -32,25 +34,29 @@ note that this project mainly targets Unix-like environments.
 - Ninja [>= 1.12.1]
 - OpenCV Library [>= 4.10.0]
 
-There are two major build targets: debug and release. A debug build retains
-special symbols so the built binaries can be fed into a debugger. A release
-build strips out all debug symbols, and heavily optimizes for reduced binary
-size and increased binary speed. In general, users will want to use a release
-build, while developers and maintainers will want to use a debug build.
+The project leverages CMake presets to make building and installing the project
+easy. There are four major build targets: host-debug, host-release, rpi4b-debug,
+and rpi4b-release. The host-debug and host-release targets will build software
+components that function natively on desktop hardware. This will build the
+`otv-analyze` binary. The rpi4b-debug and rpi4b-release targets will build
+software components that function only on Rpi 4B hardware. This will build the
+server-client framework provided by the `otv-stream` submodule. Regardless of
+the preset target, the `otv-engine` submodule will always be built given that it
+provides the OTV analysis engine used by both `otv-analyze` and `otv-stream`.
 
-For a release build, execute the following commands:
+For a release or debug build on host, execute the following commands:
 
 ```
-cmake --preset debug
-cmake --build --preset debug
+cmake --preset host-release # or host-debug
+cmake --build --preset host-release # or host-debug
 sudo cmake install
 ```
 
-For a debug build, execute the following commands:
+For a release or debug build on the Rpi4B, execute the following commands:
 
 ```
-cmake --preset release
-cmake --build --preset release
+cmake --preset rpi4b-release # or rpi4b-debug
+cmake --build --preset release # or rpi4b-debug
 sudo cmake install
 ```
 
@@ -58,9 +64,10 @@ Maintainers may also want to enable unit testing to ensure build quality.
 Execute the following commands to activate the test suite:
 
 ```
-cmake --preset debug -DENABLE_TESTS=ON
-cmake --build --preset debug
-ctest --test-dir ./build/debug
+# You can also build the test suite using the rpi4b-debug preset target as well.
+cmake --preset host-debug -DENABLE_TESTS=ON
+cmake --build --preset host-debug
+ctest --test-dir ./build/host-debug
 ```
 
 ## Usage
