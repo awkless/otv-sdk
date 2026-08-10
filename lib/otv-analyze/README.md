@@ -11,7 +11,7 @@ A simple binary that uses `otv-engine` to perform OTV analysis on video data.
 ## Install
 
 Follow the instructions in the top-level README of the project. The
-`otv-analyze` binary is built with the rest of the active codebase by default.
+`otv-analyze` binary is built for host hardware targets only.
 
 ## Usage
 
